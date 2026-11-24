@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#168A5B">
+    <title>Política de privacidad | CoAlerta</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="icon" type="image/svg+xml" href="../assets/svg/logo.svg?v=2">
+    <link rel="stylesheet" href="../css/global.css?v=css-global-cleanup-20261123">
+    <link rel="stylesheet" href="../css/sitio.css?v=sitio-mobile-readable-20261123">
+</head>
+
+<body class="pagina-legal">
+    <main class="legal-contenedor">
+        <a class="legal-volver" href="registro.html"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Volver al
+            registro</a>
+        <p class="legal-etiqueta">CoAlerta</p>
+        <h1>Política de privacidad</h1>
+        <p class="legal-actualizacion">Última actualización: 28 de octubre de 2026</p>
+
+        <div class="legal-nota">
+            Esta política explica los datos que la versión actual de CoAlerta solicita y cómo se usan sus funciones. Es
+            información transparente del prototipo, no una certificación de cumplimiento legal.
+        </div>
+
+        <div class="legal-secciones">
+            <section>
+                <h2>1. Responsable y alcance</h2>
+                <p>CoAlerta es un prototipo universitario desarrollado con fines académicos y de evaluación; no es un
+                    servicio comercial ni una plataforma de producción.</p>
+            </section>
+
+            <section>
+                <h2>2. Datos que se recopilan</h2>
+                <ul>
+                    <li><strong>Cuenta:</strong> nombres, apellidos, correo, número de celular, dirección o zona, DNI y
+                        rol de la cuenta.</li>
+                    <li><strong>Contraseña:</strong> se entrega a Firebase Authentication para crear y validar la
+                        credencial de acceso. CoAlerta no la guarda en Firestore ni en el perfil de la cuenta como texto
+                        legible; la administra el servicio de autenticación de Firebase.</li>
+                    <li><strong>Registro:</strong> el correo y la contraseña se utilizan para crear la cuenta. El DNI
+                        también se usa en un índice interno para evitar duplicados.</li>
+                    <li><strong>Perfil y preferencias:</strong> foto de perfil, preferencias de notificaciones, sonido
+                        de alerta y tema visual, contactos de emergencia que decidas guardar y registros de lectura de
+                        alertas.</li>
+                    <li><strong>Reportes:</strong> categoría, detalle breve que decidas escribir, estado, fecha y hora,
+                        coordenadas GPS y precisión informada. El detalle se conserva en tu historial privado; la
+                        ubicación precisa y la confirmación de consentimiento GPS se guardan en el registro privado del
+                        incidente, que puede ser consultado por personal operativo autorizado.</li>
+                    <li><strong>Operación de patrullas:</strong> si una cuenta operativa activa la función de ubicación
+                        de patrulla, la aplicación puede enviar y actualizar la posición GPS de esa unidad.</li>
+                    <li><strong>Ubicación compartida:</strong> el mapa expone a usuarios autenticados una versión
+                        aproximada de las coordenadas del incidente, redondeada por el servidor. Sigue pudiendo indicar
+                        una zona cercana.</li>
+                    <li><strong>Datos del dispositivo y almacenamiento local:</strong> el navegador conserva algunos
+                        datos de perfil y preferencias. La última ubicación solicitada puede permanecer en el
+                        almacenamiento de sesión del navegador; la aplicación solo la reutiliza durante un máximo de
+                        quince minutos.</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>3. Para qué se usan</h2>
+                <ul>
+                    <li>Crear y autenticar la cuenta, y prevenir registros duplicados.</li>
+                    <li>Recibir reportes, mostrar alertas cercanas, mantener su estado y permitir su revisión operativa.
+                    </li>
+                    <li>Aplicar tus preferencias, mostrar avisos comunitarios y recordar qué alertas ya consultaste.
+                    </li>
+                    <li>Proteger el servicio, mantener su funcionamiento y detectar errores o uso indebido.</li>
+                </ul>
+                <p>Antes de capturar la ubicación para un reporte, CoAlerta solicita marcar una casilla de consentimiento
+                    explícito y obtener el permiso técnico del navegador. La ubicación se solicita cuando utilizas
+                    funciones que la requieren.</p>
+            </section>
+
+            <section>
+                <h2>4. Quién puede acceder y proveedores</h2>
+                <p>Los datos de perfil y el historial de reportes propios se restringen a la cuenta correspondiente y al
+                    servidor. Las coordenadas exactas del incidente se restringen a personal operativo autorizado. Otros
+                    usuarios autenticados pueden consultar los datos aproximados que se publican en el mapa.</p>
+                <p>La autenticación y base de datos utilizan Firebase de Google. La ubicación regional de la base de
+                    datos debe confirmarse en la configuración del proyecto. Revisa las condiciones y prácticas de
+                    Google/Firebase aplicables.</p>
+                <p>Los mapas base se sirven desde ArcGIS Online de Esri y pueden incorporar datos de Esri, HERE, Garmin
+                    y OpenStreetMap. Al cargar el mapa, el navegador solicita imágenes de mosaicos a ese proveedor;
+                    consulta también las políticas de privacidad de Esri y de los proveedores de datos cartográficos.
+                </p>
+                <p>Para limitar intentos de consulta del DNI, el servidor conserva temporalmente un identificador
+                    criptográfico asociado a la IP y al tipo de solicitud; no guarda la IP directamente en ese registro
+                    de límite.</p>
+                <p>La aplicación no está conectada actualmente a un sistema municipal de despacho externo. No se debe
+                    interpretar el envío de un reporte como una notificación a la policía, serenazgo u otro servicio de
+                    emergencia.</p>
+            </section>
+
+            <section>
+                <h2>5. Conservación y eliminación</h2>
+                <p>Al eliminar una cuenta de vecino, coordinación o seguridad se borran el perfil, las preferencias,
+                    los contactos de emergencia, la membresía comunitaria y las copias personales de alertas. Los
+                    incidentes comunitarios se conservan sin la referencia al UID del autor; las calificaciones
+                    asociadas se eliminan. Para seguridad, también se libera la unidad y se borra la ubicación
+                    almacenada; la unidad debe estar disponible y sin una emergencia asignada. Los registros operativos
+                    y de auditoría no se borran automáticamente y podrían conservar identificadores necesarios para
+                    la trazabilidad. Las cuentas de administración deben ser gestionadas por otro administrador.
+                </p>
+            </section>
+
+            <section>
+                <h2>6. Seguridad</h2>
+                <p>La aplicación utiliza reglas de acceso de Firestore y funciones de servidor para operaciones
+                    sensibles; la contraseña se gestiona a través de Firebase Authentication y no se almacena como texto
+                    legible en Firestore. Ningún sistema conectado a Internet puede garantizar seguridad absoluta. No
+                    compartas tu contraseña.</p>
+            </section>
+
+            <section>
+                <h2>7. Tus opciones y derechos</h2>
+                <p>Puedes decidir si otorgas permisos de ubicación y puedes cambiar preferencias desde la aplicación. La
+                    ley aplicable puede reconocer derechos de acceso, rectificación, cancelación, oposición u otros.</p>
+            </section>
+
+            <section>
+                <h2>8. Cambios a esta política</h2>
+                <p>Esta política puede actualizarse cuando cambien las funciones o el tratamiento de datos. La fecha
+                    indicada arriba señala la última revisión de este texto; consulta esta página para conocer la
+                    versión vigente.</p>
+            </section>
+        </div>
+
+        <nav class="legal-enlaces" aria-label="Documentos legales">
+            <a href="terminos.html">Términos y condiciones</a>
+            <a href="registro.html">Crear cuenta</a>
+        </nav>
+    </main>
+</body>
+
+</html>

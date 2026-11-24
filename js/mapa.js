@@ -1,0 +1,905 @@
+import {
+    onAuthStateChanged, signOut
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { auth } from "./firebase-config.js?v=spark-direct-firestore-1";
+import {
+    configurarCierreSesion,
+    escapeHtml,
+    formatearRolVisible
+} from "./general.js?v=shared-core-20261106";
+
+let ubicacionActualMapa = null;
+let comunidadActualMapa = null;
+let solicitudUbicacionMapa = false;
+const precisionMaximaUbicacionAceptableMetros = 100000;
+const CLAVE_LUGARES_MAPA = "coalerta_lugares_mapa";
+const VIGENCIA_LUGARES_MAPA_MS = 30 * 60 * 1000;
+const TIPOS_LUGAR_MAPA = {
+    salud: { icono: "fa-kit-medical", color: "marcador-salud", etiqueta: "Centro de salud" },
+    comisaria: { icono: "fa-shield-halved", color: "marcador-comisaria", etiqueta: "Comisaría / policía" },
+    serenazgo: { icono: "fa-shield-halved", color: "marcador-serenazgo", etiqueta: "Serenazgo / seguridad ciudadana" },
+    bomberos: { icono: "fa-fire-extinguisher", color: "marcador-bomberos", etiqueta: "Estación de bomberos" },
+    municipalidad: { icono: "fa-landmark", color: "marcador-lugar", etiqueta: "Municipalidad" },
+    lugar: { icono: "fa-location-dot", color: "marcador-lugar", etiqueta: "Lugar importante" }
+};
+const TIPOS_LUGAR_PERMANENTES = new Set(["salud", "comisaria", "serenazgo", "bomberos", "municipalidad"]);
+const ICONOS_LUGAR_MAPA = new Map();
+const SILUETA_PIN_LUGAR_MAPA = "M16 1.25C7.86 1.25 1.25 7.86 1.25 16c0 10.68 14.75 21.6 14.75 21.6S30.75 26.68 30.75 16C30.75 7.86 24.14 1.25 16 1.25z";
+const DATOS_ICONO_LUGAR_MAPA = {
+    salud: {
+        color: "#d81b60",
+        dibujo: '<path d="M10 11h12v9H10zM13 11V9.5A1.5 1.5 0 0 1 14.5 8h3A1.5 1.5 0 0 1 19 9.5V11" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/><path d="M16 13v5m-2.5-2.5h5" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>'
+    },
+    comisaria: {
+        color: "#3949ab",
+        dibujo: '<path d="M16 7.5 23 10v5.5c0 4-2.8 7-7 9-4.2-2-7-5-7-9V10z" fill="none" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/><path d="m12.5 15.2 2.2 2.2 4.8-4.8" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+    },
+    serenazgo: {
+        color: "#00796b",
+        dibujo: '<circle cx="12.5" cy="10" r="2.4" fill="#ffffff"/><path d="M8.5 20c.4-3.2 1.8-5.3 4-5.3s3.6 2.1 4 5.3z" fill="#ffffff"/><path d="m20 12 3 1.1v2.3c0 1.8-1.1 3.2-3 4.2-1.9-1-3-2.4-3-4.2v-2.3z" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/><path d="m18.7 15.5 1 1 1.7-1.9" fill="none" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+    },
+    bomberos: {
+        color: "#d32f2f",
+        dibujo: '<path d="M17 7c.7 3.1-1 4.2-1.8 5.2-.3-1.6-1.3-2.8-3.1-4.1.1 2.7-3.4 4.6-3.4 8.1a7.3 7.3 0 0 0 14.6 0c0-3.4-2.1-6.3-6.3-9.2z" fill="#ffffff"/>'
+    },
+    municipalidad: {
+        color: "#64748b",
+        dibujo: '<path d="m16 7 8 4H8zm-6 6h2v7h-2zm5 0h2v7h-2zm5 0h2v7h-2zM8 21h16v2H8z" fill="#ffffff"/>'
+    },
+    lugar: {
+        color: "#64748b",
+        dibujo: '<path d="m16 8 2.2 5.8L24 16l-5.8 2.2L16 24l-2.2-5.8L8 16l5.8-2.2z" fill="#ffffff"/>'
+    }
+};
+window.coalertaEstadoUbicacionMapa = "pending";
+window.coalertaUbicacionMapa = null;
+
+document.addEventListener("DOMContentLoaded", function () {
+    const elementoMapa = document.getElementById("mapaInteractivo");
+    if (!elementoMapa) return;
+
+    if (typeof L === "undefined") {
+        console.error("Leaflet no está cargado.");
+        elementoMapa.textContent = "No se pudo cargar el mapa. Comprueba tu conexión e inténtalo nuevamente.";
+        elementoMapa.classList.add("mapa-error");
+        return;
+    }
+
+    window.map = L.map(elementoMapa, { zoomControl: true, preferCanvas: true, maxZoom: 19 })
+        .setView([-12.0990, -77.0360], 15);
+    const query = new URLSearchParams(window.location.search);
+    const latitudeValue = query.get("lat");
+    const longitudeValue = query.get("lng");
+    const targetLatitude = latitudeValue === null ? Number.NaN : Number(latitudeValue);
+    const targetLongitude = longitudeValue === null ? Number.NaN : Number(longitudeValue);
+    let lugarObjetivo = null;
+    if (Number.isFinite(targetLatitude) && Number.isFinite(targetLongitude) &&
+        targetLatitude >= -90 && targetLatitude <= 90 &&
+        targetLongitude >= -180 && targetLongitude <= 180) {
+        window.map.setView([targetLatitude, targetLongitude], 17);
+        // Enlaces desde "Mi comunidad": ?lat=..&lng=..&tipo=..&nombre=..
+        lugarObjetivo = {
+            latitud: targetLatitude,
+            longitud: targetLongitude,
+            tipo: query.get("tipo"),
+            nombre: (query.get("nombre") || "").slice(0, 120)
+        };
+    }
+    window.grupoMarcadoresAlertas = L.layerGroup().addTo(window.map);
+    window.marcadoresAlertas = [];
+    const grupoMarcadoresSerenazgo = L.layerGroup().addTo(window.map);
+    const tileLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+        attribution: "Tiles &copy; Esri — Source: Esri, HERE, Garmin, (c) OpenStreetMap contributors, and the GIS user community"
+    }).addTo(window.map);
+    tileLayer.on("tileerror", function (event) {
+        const status = document.getElementById("mapaTileError");
+        if (status) {
+            status.textContent = "El proveedor del mapa no pudo cargar algunas imágenes. Revisa tu conexión e inténtalo nuevamente.";
+            status.hidden = false;
+        }
+        console.warn("El proveedor de mapas no pudo cargar una imagen:", event.tile?.src);
+    });
+    const grupoMarcadoresLugares = typeof L.markerClusterGroup === "function"
+        ? L.markerClusterGroup({
+            chunkedLoading: true,
+            chunkInterval: 100,
+            chunkDelay: 25,
+            removeOutsideVisibleBounds: true,
+            showCoverageOnHover: false
+        }).addTo(window.map)
+        : L.layerGroup().addTo(window.map);
+
+    cargarAlertasGuardadas();
+    mostrarLugaresCercanosEnMapa(grupoMarcadoresLugares, lugarObjetivo);
+    configurarFiltrosMapa();
+    configurarPerfilSidebar();
+    configurarCierreSesion({
+        auth,
+        signOut,
+        confirmationMessage: "¿Seguro que deseas cerrar sesión?",
+        clearCachedSession: true
+    });
+    configurarModalEmergencia();
+    configurarCentradoAlertas();
+    configurarPeriodoMapa();
+    configurarTemaMapa();
+    configurarPanelAlertasMovil();
+    window.addEventListener("coalerta:alertas-actualizadas", function () {
+        actualizarMarcadoresMapa();
+    });
+    window.addEventListener("coalerta:mis-alertas-actualizadas", actualizarMarcadoresMapa);
+    window.addEventListener("coalerta:patrullas-actualizadas", function () {
+        actualizarContadorUnidades();
+    });
+    window.addEventListener("coalerta:miembros-actualizados", function (event) {
+        actualizarMarcadoresSerenazgo(event.detail, grupoMarcadoresSerenazgo);
+    });
+    window.addEventListener("coalerta:datos-listos", function (event) {
+        configurarPerfilSidebar(event.detail.profile);
+        configurarConsultaAlertasMapa(event.detail.profile);
+        actualizarMarcadoresSerenazgo(
+            window.coalertaData ? window.coalertaData.getCommunityMembers() : [],
+            grupoMarcadoresSerenazgo
+        );
+        actualizarEstadoFirebaseMapa("connected");
+    });
+    window.addEventListener("coalerta:sesion-cambiada", function (event) {
+        const hasUser = Boolean(event.detail?.user);
+        const isReady = Boolean(window.coalertaData?.isReady());
+        if (!hasUser || event.detail.user.isAnonymous) configurarConsultaAlertasMapa(null);
+        let connectionStatus = "connecting";
+        if (event.detail?.registrationIncomplete) connectionStatus = "registration-incomplete";
+        else if (!hasUser) connectionStatus = "disconnected";
+        else if (isReady) connectionStatus = "connected";
+        actualizarEstadoFirebaseMapa(connectionStatus);
+    });
+    window.addEventListener("coalerta:error", function (event) {
+        const area = event.detail?.area;
+        if (["perfil", "alertas públicas", "incidentes operativos"].includes(area)) {
+            actualizarEstadoFirebaseMapa("error");
+        }
+    });
+    window.addEventListener("coalerta:registro-incompleto", function () {
+        configurarConsultaAlertasMapa(null);
+    });
+    onAuthStateChanged(auth, (user) => {
+        if (!user || user.isAnonymous) {
+            configurarConsultaAlertasMapa(null);
+            return;
+        }
+        if (window.coalertaData?.isReady()) {
+            configurarConsultaAlertasMapa(window.coalertaData.getProfile());
+        }
+    });
+    if (window.coalertaData?.isReady()) {
+        configurarConsultaAlertasMapa(window.coalertaData.getProfile());
+        actualizarMarcadoresSerenazgo(
+            window.coalertaData.getCommunityMembers(),
+            grupoMarcadoresSerenazgo
+        );
+    }
+    window.setInterval(() => {
+        if (window.coalertaData?.isReady()) {
+            actualizarMarcadoresSerenazgo(
+                window.coalertaData.getCommunityMembers(),
+                grupoMarcadoresSerenazgo
+            );
+        }
+    }, 30000);
+
+    const botonUbicacion = document.getElementById("btnMiUbicacion");
+    if (botonUbicacion) botonUbicacion.addEventListener("click", mostrarMiUbicacion);
+
+    actualizarContadorMapa();
+    actualizarEstadoFirebaseMapa("connecting");
+    window.setTimeout(() => window.map?.invalidateSize(), 300);
+    window.addEventListener("resize", () => {
+        if (window.map) window.map.invalidateSize();
+    });
+    if (typeof ResizeObserver !== "undefined") {
+        const observer = new ResizeObserver(() => {
+            if (window.map) window.map.invalidateSize({ pan: false });
+        });
+        observer.observe(elementoMapa.parentElement || elementoMapa);
+    }
+});
+
+function configurarConsultaAlertasMapa(profile) {
+    const communityId = String(profile?.comunidadId || "").trim();
+    const context = communityId || "public";
+    if (context === comunidadActualMapa && solicitudUbicacionMapa) return;
+    comunidadActualMapa = context;
+
+    solicitarUbicacionMapa();
+    actualizarMarcadoresMapa();
+}
+
+function solicitarUbicacionMapa() {
+    if (solicitudUbicacionMapa) return;
+    solicitudUbicacionMapa = true;
+    if (!navigator.geolocation) {
+        window.coalertaUbicacionMapa = null;
+        window.coalertaEstadoUbicacionMapa = "unavailable";
+        window.dispatchEvent(new CustomEvent("coalerta:ubicacion-mapa-actualizada"));
+        actualizarMarcadoresMapa();
+        return;
+    }
+    navigator.geolocation.getCurrentPosition((position) => {
+        const precisionMetros = position.coords.accuracy;
+        ubicacionActualMapa = {
+            latitud: position.coords.latitude,
+            longitud: position.coords.longitude,
+            precisionMetros
+        };
+        window.coalertaUbicacionMapa = ubicacionActualMapa;
+        if (precisionMetros > precisionMaximaUbicacionAceptableMetros) {
+            console.warn("La ubicación del navegador es demasiado imprecisa para buscar alertas cercanas.");
+            window.coalertaEstadoUbicacionMapa = "inaccurate";
+        } else if (precisionMetros > 5000) {
+            window.coalertaEstadoUbicacionMapa = "approximate";
+        } else {
+            window.coalertaEstadoUbicacionMapa = "ready";
+        }
+        window.dispatchEvent(new CustomEvent("coalerta:ubicacion-mapa-actualizada"));
+        actualizarMarcadoresMapa();
+    }, (error) => {
+        if (error.code === 1) {
+            console.info("El usuario denegó el permiso de ubicación para filtrar alertas cercanas.");
+        } else {
+            console.warn("No se pudo obtener la ubicación para filtrar alertas cercanas:", error);
+        }
+        ubicacionActualMapa = null;
+        window.coalertaUbicacionMapa = null;
+        window.coalertaEstadoUbicacionMapa = error.code === 1 ? "denied" : "unavailable";
+        window.dispatchEvent(new CustomEvent("coalerta:ubicacion-mapa-actualizada"));
+        actualizarMarcadoresMapa();
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+}
+
+function actualizarMarcadoresMapa() {
+    if (!window.map) return;
+    window.limpiarMarcadoresMapa();
+    cargarAlertasGuardadas();
+    actualizarContadorMapa();
+    aplicarFiltrosMapa();
+    window.dispatchEvent(new CustomEvent("coalerta:mapa-alertas-actualizadas"));
+}
+
+function actualizarMarcadoresSerenazgo(miembros, capa) {
+    if (!capa) return;
+    capa.clearLayers();
+    const ahora = Date.now();
+    (Array.isArray(miembros) ? miembros : []).forEach((miembro) => {
+        const actualizado = miembro.ubicacionActualizadaAt
+            ? new Date(miembro.ubicacionActualizadaAt).getTime()
+            : Number.NaN;
+        const latitud = Number(miembro.latitud);
+        const longitud = Number(miembro.longitud);
+        if (miembro.rol !== "seguridad" || miembro.ubicacionCompartida !== true ||
+            !Number.isFinite(actualizado) || ahora - actualizado > 2 * 60 * 1000 ||
+            !Number.isFinite(latitud) || latitud < -90 || latitud > 90 ||
+            !Number.isFinite(longitud) || longitud < -180 || longitud > 180) return;
+
+        const marcador = L.marker([latitud, longitud], {
+            icon: crearIconoMapa("fa-user-shield", "marcador-serenazgo")
+        });
+        const popup = document.createElement("div");
+        popup.className = "popup-coalerta";
+        const nombre = document.createElement("strong");
+        nombre.textContent = miembro.nombre || "Personal de serenazgo";
+        const tipo = document.createElement("div");
+        tipo.textContent = "Personal de serenazgo · ubicación compartida";
+        popup.append(nombre, tipo);
+        marcador.bindPopup(popup).addTo(capa);
+    });
+}
+
+function leerLugaresGuardados() {
+    try {
+        const guardado = JSON.parse(sessionStorage.getItem(CLAVE_LUGARES_MAPA) || "null");
+        if (!guardado || !Array.isArray(guardado.lugares) ||
+            !Number.isFinite(guardado.timestamp) || guardado.timestamp > Date.now() ||
+            Date.now() - guardado.timestamp > VIGENCIA_LUGARES_MAPA_MS) {
+            return [];
+        }
+        return guardado.lugares
+            .map((lugar) => ({
+                nombre: String(lugar.nombre || "Lugar sin nombre registrado"),
+                tipo: lugar.tipo,
+                latitud: Number(lugar.latitud),
+                longitud: Number(lugar.longitud)
+            }))
+            .filter((lugar) =>
+                TIPOS_LUGAR_PERMANENTES.has(lugar.tipo) &&
+                Number.isFinite(lugar.latitud) && lugar.latitud >= -90 && lugar.latitud <= 90 &&
+                Number.isFinite(lugar.longitud) && lugar.longitud >= -180 && lugar.longitud <= 180);
+    } catch (error) {
+        console.warn("No se pudieron leer los lugares cercanos guardados:", error);
+        return [];
+    }
+}
+
+function crearMarcadorLugar(lugar) {
+    const tipo = TIPOS_LUGAR_MAPA[lugar.tipo] || TIPOS_LUGAR_MAPA.lugar;
+    const marcador = L.marker([lugar.latitud, lugar.longitud], {
+        icon: obtenerIconoLugarMapa(lugar.tipo),
+        zIndexOffset: -100
+    });
+    const popup = document.createElement("div");
+    popup.className = "popup-coalerta";
+    const nombre = document.createElement("strong");
+    nombre.textContent = lugar.nombre;
+    const detalle = document.createElement("div");
+    detalle.textContent = tipo.etiqueta;
+    popup.append(nombre, detalle);
+    marcador.bindPopup(popup);
+    return marcador;
+}
+
+// Dibuja los lugares cercanos guardados desde "Mi comunidad" y enfoca el
+// lugar seleccionado cuando se llega desde un enlace de esa página.
+function mostrarLugaresCercanosEnMapa(capa, lugarObjetivo) {
+    if (!capa) return;
+    capa.clearLayers();
+    const margen = 0.0002; // ≈ 22 m
+    let elegido = null;
+    let menorDistancia = Infinity;
+    const marcadores = [];
+
+    leerLugaresGuardados().forEach((lugar) => {
+        const marcador = crearMarcadorLugar(lugar);
+        marcadores.push(marcador);
+        if (!lugarObjetivo) return;
+        const dLat = Math.abs(lugar.latitud - lugarObjetivo.latitud);
+        const dLng = Math.abs(lugar.longitud - lugarObjetivo.longitud);
+        if (dLat > margen || dLng > margen) return;
+        // El nombre coincidente tiene prioridad; si no, el más cercano.
+        const distancia = dLat + dLng - (lugar.nombre === lugarObjetivo.nombre ? 1 : 0);
+        if (distancia < menorDistancia) {
+            menorDistancia = distancia;
+            elegido = marcador;
+        }
+    });
+
+    // Lugar seleccionado que no se guarda de forma permanente (bomberos, municipalidad)
+    // o cuya lista ya venció: se muestra solo ese marcador.
+    if (!elegido && lugarObjetivo?.tipo) {
+        elegido = crearMarcadorLugar({
+            nombre: lugarObjetivo.nombre || "Lugar seleccionado",
+            tipo: TIPOS_LUGAR_MAPA[lugarObjetivo.tipo] ? lugarObjetivo.tipo : "lugar",
+            latitud: lugarObjetivo.latitud,
+            longitud: lugarObjetivo.longitud
+        });
+        marcadores.push(elegido);
+    }
+    if (elegido) {
+        marcadores.splice(marcadores.indexOf(elegido), 1);
+        marcadores.unshift(elegido);
+    }
+    if (typeof capa.addLayers === "function") {
+        capa.addLayers(marcadores);
+    } else {
+        marcadores.forEach((marcador) => capa.addLayer(marcador));
+    }
+    if (!elegido) return;
+    if (typeof capa.zoomToShowLayer === "function") {
+        capa.zoomToShowLayer(elegido, () => elegido.openPopup());
+    } else {
+        window.map.setView(elegido.getLatLng(), 17);
+        elegido.openPopup();
+    }
+}
+
+function configurarPanelAlertasMovil() {
+    const panel = document.querySelector(".alertas-panel");
+    const toggle = document.getElementById("btnExpandirAlertas");
+    const mapGrid = document.querySelector(".mapa-principal-grid");
+    if (!panel || !toggle || !mapGrid) return;
+
+    const updatePanelPosition = () => {
+        document.body.style.setProperty(
+            "--alertas-panel-height",
+            `${panel.getBoundingClientRect().height}px`
+        );
+    };
+    updatePanelPosition();
+    if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(updatePanelPosition).observe(panel);
+    }
+
+    toggle.addEventListener("click", function () {
+        const expanded = panel.dataset.expanded !== "true";
+        panel.dataset.expanded = String(expanded);
+        mapGrid.classList.toggle("alertas-panel-expandido", expanded);
+        document.body.classList.toggle("alertas-panel-expandido", expanded);
+        toggle.setAttribute("aria-expanded", String(expanded));
+        toggle.setAttribute("aria-label", expanded
+            ? "Contraer alertas cercanas"
+            : "Mostrar alertas cercanas");
+        toggle.querySelector("small").textContent = expanded ? "Ver menos" : "Ver todas";
+        toggle.querySelector("i").className = expanded
+            ? "fa-solid fa-chevron-down"
+            : "fa-solid fa-chevron-up";
+        updatePanelPosition();
+    });
+}
+
+function actualizarEstadoFirebaseMapa(status) {
+    const header = document.getElementById("estadoSistemaMapa");
+    const backendStatus = document.getElementById("estadoBackendMapa");
+    const stateContainer = document.querySelector(".estado-sistema");
+    const labels = {
+        connected: {
+            header: "Conectado a CoAlerta",
+            dashboard: "En línea"
+        },
+        connecting: {
+            header: "Conectando…",
+            dashboard: "Conectando"
+        },
+        error: {
+            header: "Error de sincronización",
+            dashboard: "Sin conexión"
+        },
+        "registration-incomplete": {
+            header: "Registro pendiente",
+            dashboard: "Registro pendiente"
+        },
+        disconnected: {
+            header: "Sin sesión",
+            dashboard: "Sin sesión"
+        }
+    };
+    const current = labels[status] || labels.error;
+    if (header) header.textContent = current.header;
+    if (backendStatus) backendStatus.textContent = current.dashboard;
+    if (stateContainer) stateContainer.dataset.state = status;
+}
+
+function crearIconoMapa(icono, color) {
+    return L.divIcon({
+        className: "marcador-personalizado",
+        html: `<span class="marcador-icono ${color}"><i class="fa-solid ${icono}" aria-hidden="true"></i></span>`,
+        iconSize: [42, 42],
+        iconAnchor: [21, 42],
+        popupAnchor: [0, -42]
+    });
+}
+
+function obtenerIconoLugarMapa(tipo) {
+    const categoria = DATOS_ICONO_LUGAR_MAPA[tipo] ? tipo : "lugar";
+    if (ICONOS_LUGAR_MAPA.has(categoria)) return ICONOS_LUGAR_MAPA.get(categoria);
+
+    const { color, dibujo } = DATOS_ICONO_LUGAR_MAPA[categoria];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40"><path d="${SILUETA_PIN_LUGAR_MAPA}" fill="${color}" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>${dibujo}</svg>`;
+    const icono = L.icon({
+        iconUrl: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        iconSize: [32, 40],
+        iconAnchor: [16, 40],
+        popupAnchor: [0, -36]
+    });
+    ICONOS_LUGAR_MAPA.set(categoria, icono);
+    return icono;
+}
+
+function agregarMarcadorAlerta(alerta) {
+    if (!window.map || !window.grupoMarcadoresAlertas) return null;
+    const latitudMapa = alerta.latitudPublica ?? alerta.latitud;
+    const longitudMapa = alerta.longitudPublica ?? alerta.longitud;
+    if (latitudMapa === null || latitudMapa === "" ||
+        longitudMapa === null || longitudMapa === "") return null;
+
+    const latitud = Number(latitudMapa);
+    const longitud = Number(longitudMapa);
+    if (!Number.isFinite(latitud) || !Number.isFinite(longitud) ||
+        latitud < -90 || latitud > 90 || longitud < -180 || longitud > 180) {
+        return null;
+    }
+
+    const categoriasEmergencia = {
+        robo: "Robo",
+        sospecha: "Sospecha",
+        accidente: "Accidente",
+        incendio: "Incendio"
+    };
+    const tipo = alerta.tipo === "alerta_abierta"
+        ? categoriasEmergencia[alerta.categoria] || "Emergencia inmediata"
+        : alerta.tipo || "Alerta";
+    const tipoClase = normalizarTipoMapa(tipo);
+    const marcador = L.marker([latitud, longitud], {
+        icon: obtenerIconoPorTipo(tipo)
+    }).addTo(window.grupoMarcadoresAlertas);
+
+    marcador.bindPopup(`
+        <div class="popup-coalerta">
+            <strong>${escapeHtml(tipo)}</strong><br>
+            <span>${escapeHtml(alerta.ubicacion || "Ubicación registrada")}</span><br><br>
+            ${alerta.detalle ? `<span>${escapeHtml(alerta.detalle)}</span><br><br>` : ""}
+            <b>Estado:</b> ${escapeHtml(alerta.estado || "Activa")}<br>
+            <b>Hora:</b> ${escapeHtml(alerta.hora || formatTime(alerta.timestamp))}
+        </div>
+    `);
+    window.marcadoresAlertas.push({
+        marcador,
+        tipo: tipoClase,
+        timestamp: new Date(alerta.timestamp || 0).getTime(),
+        estado: alerta.estado || ""
+    });
+    return marcador;
+}
+
+function obtenerIconoPorTipo(tipo) {
+    const categoria = normalizarTipoMapa(tipo);
+    const iconos = {
+        robo: ["fa-mask-face", "marcador-rojo"],
+        sospechoso: ["fa-user-secret", "marcador-amarillo"],
+        accidente: ["fa-truck-medical", "marcador-azul"],
+        incendio: ["fa-fire", "marcador-naranja"]
+    };
+    const [icono, color] = iconos[categoria] || ["fa-triangle-exclamation", "marcador-rojo"];
+    return crearIconoMapa(icono, color);
+}
+
+function normalizarTipoMapa(tipo) {
+    const valor = String(tipo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    if (valor.includes("robo")) return "robo";
+    if (valor.includes("sospech")) return "sospechoso";
+    if (valor.includes("accidente")) return "accidente";
+    if (valor.includes("incendio")) return "incendio";
+    return "otro";
+}
+
+function centrarMapa(latitud, longitud, zoom = 17) {
+    const lat = Number(latitud);
+    const lng = Number(longitud);
+    if (!window.map || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    window.map.setView([lat, lng], zoom);
+}
+
+let marcadorUsuario = null;
+
+function mostrarMiUbicacion() {
+    if (!navigator.geolocation) {
+        alert("Tu navegador no permite geolocalización.");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(function (position) {
+        const { latitude, longitude } = position.coords;
+        ubicacionActualMapa = {
+            latitud: latitude,
+            longitud: longitude,
+            precisionMetros: position.coords.accuracy
+        };
+        window.coalertaUbicacionMapa = ubicacionActualMapa;
+        const precisionUsable = position.coords.accuracy <= precisionMaximaUbicacionAceptableMetros;
+        const precisionSuficiente = position.coords.accuracy <= 5000;
+        if (!precisionUsable) {
+            window.coalertaEstadoUbicacionMapa = "inaccurate";
+        } else if (precisionSuficiente) {
+            window.coalertaEstadoUbicacionMapa = "ready";
+        } else {
+            window.coalertaEstadoUbicacionMapa = "approximate";
+        }
+        if (!precisionUsable) {
+            console.warn("La ubicación del navegador es demasiado imprecisa para buscar alertas cercanas.");
+        }
+        window.dispatchEvent(new CustomEvent("coalerta:ubicacion-mapa-actualizada"));
+        centrarMapa(latitude, longitude, 17);
+        actualizarMarcadoresMapa();
+
+        if (marcadorUsuario) window.map.removeLayer(marcadorUsuario);
+        marcadorUsuario = L.marker([latitude, longitude], {
+            icon: crearIconoMapa("fa-location-dot", "marcador-verde")
+        }).addTo(window.map);
+        let popupContent;
+        if (!precisionUsable) {
+            popupContent = "<div class=\"popup-coalerta\"><strong>Ubicación demasiado imprecisa</strong><br>No se pueden filtrar alertas cercanas con esta ubicación.</div>";
+        } else if (precisionSuficiente) {
+            popupContent = "<div class=\"popup-coalerta\"><strong>Tu ubicación</strong><br>Estás aquí actualmente.</div>";
+        } else {
+            popupContent = "<div class=\"popup-coalerta\"><strong>Ubicación aproximada</strong><br>Las alertas se filtran en un radio de 5 km alrededor de esta ubicación estimada.</div>";
+        }
+        marcadorUsuario.bindPopup(popupContent);
+        marcadorUsuario.openPopup();
+    }, function (error) {
+        console.error("No se pudo obtener la ubicación:", error);
+        const mensajes = {
+            1: "Debes permitir el acceso a tu ubicación.",
+            2: "No se pudo determinar tu ubicación.",
+            3: "La solicitud de ubicación tardó demasiado."
+        };
+        ubicacionActualMapa = null;
+        window.coalertaUbicacionMapa = null;
+        window.coalertaEstadoUbicacionMapa = error.code === 1 ? "denied" : "unavailable";
+        window.dispatchEvent(new CustomEvent("coalerta:ubicacion-mapa-actualizada"));
+        actualizarMarcadoresMapa();
+        alert(mensajes[error.code] || "No se pudo obtener tu ubicación.");
+    }, {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0
+    });
+}
+
+function cargarAlertasGuardadas() {
+    const data = window.coalertaData;
+    const profile = data?.isReady() ? data.getProfile() : null;
+    const communityId = String(profile?.comunidadId || "").trim();
+    const ownAlerts = data ? data.getMyAlerts() : [];
+    const ownAlertIds = new Set(ownAlerts.map((alerta) => String(alerta.id)));
+    const alerts = new Map((data ? data.getAlerts() : []).map((alerta) => [String(alerta.id), alerta]));
+    const now = Date.now();
+    const recentAlertCutoff = now - 60 * 60 * 1000;
+    ownAlerts.forEach((alerta) => {
+        const id = String(alerta.id);
+        alerts.set(id, {
+            ...alerts.get(id),
+            ...alerta,
+            id,
+            esReportePropio: true
+        });
+    });
+    const activas = Array.from(alerts.values()).filter((alerta) => {
+        if (["Descartada", "Emergencia Concluida"].includes(alerta.estado)) return false;
+        const timestamp = new Date(alerta.timestamp || 0).getTime();
+        if (!Number.isFinite(timestamp) || timestamp < recentAlertCutoff || timestamp > now) return false;
+        const ownAlert = ownAlertIds.has(String(alerta.id));
+        if (communityId) {
+            if (alerta.comunidadId !== communityId) return false;
+        } else if (!ownAlert && alerta.visibilidad !== "publica" && alerta.tipo !== "alerta_abierta") {
+            return false;
+        }
+        if (!ubicacionActualMapa ||
+            !["ready", "approximate"].includes(window.coalertaEstadoUbicacionMapa)) return false;
+        const latitud = Number(alerta.latitudPublica ?? alerta.latitud);
+        const longitud = Number(alerta.longitudPublica ?? alerta.longitud);
+        if (!Number.isFinite(latitud) || latitud < -90 || latitud > 90 ||
+            !Number.isFinite(longitud) || longitud < -180 || longitud > 180) return false;
+        return data?.distanceMeters
+            ? data.distanceMeters(
+                ubicacionActualMapa,
+                { latitud, longitud }
+            ) <= 5000
+            : window.coalertaDistanciaEnMetros(
+                ubicacionActualMapa,
+                { latitud, longitud }
+            ) <= 5000;
+    });
+    window.coalertaAlertasMapa = activas;
+    activas.forEach(agregarMarcadorAlerta);
+    return activas.length;
+}
+
+window.agregarAlertaAlMapa = function (alertaOrType, latitud, longitud, ubicacion = "Ubicación registrada") {
+    const alerta = typeof alertaOrType === "object"
+        ? alertaOrType
+        : {
+            tipo: alertaOrType,
+            latitud,
+            longitud,
+            ubicacion,
+            prioridad: obtenerPrioridadPorTipo(alertaOrType)
+        };
+    const marcador = agregarMarcadorAlerta(alerta);
+    if (marcador) {
+        centrarMapa(latitud, longitud, 17);
+        aplicarFiltrosMapa();
+    }
+};
+
+function obtenerPrioridadPorTipo(tipo) {
+    const categoria = normalizarTipoMapa(tipo);
+    return ["robo", "incendio", "accidente"].includes(categoria) ? "Alta" : "Media";
+}
+
+window.limpiarMarcadoresMapa = function () {
+    if (!window.grupoMarcadoresAlertas) return;
+    window.grupoMarcadoresAlertas.clearLayers();
+    window.marcadoresAlertas = [];
+};
+
+window.actualizarMapa = function () {
+    if (window.map) window.map.invalidateSize();
+};
+
+function configurarCentradoAlertas() {
+    const contenedor = document.getElementById("alertasLista");
+    if (!contenedor) return;
+
+    contenedor.addEventListener("click", function (evento) {
+        const boton = evento.target.closest(".btn-ver-mapa");
+        if (!boton) return;
+
+        const latitud = Number(boton.dataset.lat);
+        const longitud = Number(boton.dataset.lng);
+        if (Number.isFinite(latitud) && Number.isFinite(longitud)) {
+            centrarMapa(latitud, longitud, 18);
+        }
+    });
+}
+
+function configurarFiltrosMapa() {
+    const boton = document.getElementById("btnFiltros");
+    const panel = document.getElementById("panelFiltros");
+    if (!boton || !panel) return;
+
+    boton.addEventListener("click", function () {
+        panel.hidden = !panel.hidden;
+        boton.setAttribute("aria-expanded", String(!panel.hidden));
+    });
+    panel.querySelectorAll('input[type="checkbox"]').forEach((control) => {
+        control.addEventListener("change", aplicarFiltrosMapa);
+    });
+
+    const listaAlertas = document.getElementById("alertasLista");
+    if (listaAlertas && typeof MutationObserver !== "undefined") {
+        const observer = new MutationObserver(aplicarFiltrosMapa);
+        observer.observe(listaAlertas, { childList: true });
+    }
+}
+
+function aplicarFiltrosMapa() {
+    const panel = document.getElementById("panelFiltros");
+    if (!panel) return;
+
+    const seleccionados = new Set(
+        Array.from(panel.querySelectorAll('input[type="checkbox"]:checked'))
+            .map((control) => control.value)
+    );
+
+    const filtroTiempo = document.getElementById("filtroTiempoMapa");
+    const periodo = filtroTiempo ? filtroTiempo.value : "all";
+    (window.marcadoresAlertas || []).forEach(({ marcador, tipo, timestamp }) => {
+        const coincideCategoria = seleccionados.has(tipo);
+        const edad = Date.now() - timestamp;
+        const coincideTiempo = periodo === "all" ||
+            (periodo === "hour" && edad <= 60 * 60 * 1000) ||
+            (periodo === "today" && new Date(timestamp).toDateString() === new Date().toDateString()) ||
+            (periodo === "week" && edad <= 7 * 24 * 60 * 60 * 1000);
+        if (coincideCategoria && coincideTiempo) {
+            if (!window.grupoMarcadoresAlertas.hasLayer(marcador)) {
+                window.grupoMarcadoresAlertas.addLayer(marcador);
+            }
+        } else {
+            window.grupoMarcadoresAlertas.removeLayer(marcador);
+        }
+    });
+
+    let records = [];
+    try {
+        records = JSON.parse(localStorage.getItem("coalertaAlertas") || "[]");
+        if (!Array.isArray(records)) throw new Error("La lista guardada no es válida.");
+    } catch (error) {
+        console.error("No se pudieron leer las alertas para aplicar el filtro temporal:", error);
+    }
+    document.querySelectorAll("#alertasLista .alerta-item").forEach((alerta) => {
+        const item = records.find((record) => String(record.id) === alerta.dataset.id);
+        const date = new Date(item?.timestamp || 0);
+        const age = Date.now() - date.getTime();
+        const timeMatches = periodo === "all" ||
+            (periodo === "hour" && age <= 60 * 60 * 1000) ||
+            (periodo === "today" && date.toDateString() === new Date().toDateString()) ||
+            (periodo === "week" && age <= 7 * 24 * 60 * 60 * 1000);
+        alerta.hidden = !seleccionados.has(normalizarTipoMapa(alerta.dataset.tipo)) || !timeMatches;
+    });
+}
+
+function configurarPerfilSidebar(profileOverride) {
+    let usuario = profileOverride || {};
+    if (!profileOverride) {
+        try {
+            usuario = JSON.parse(localStorage.getItem("coalerta_usuario")) || {};
+        } catch (error) {
+            console.error("No se pudieron cargar los datos de usuario:", error);
+        }
+    }
+
+    const nombre = usuario.nombre ||
+        [usuario.nombres, usuario.apellidos].filter(Boolean).join(" ") ||
+        "usuario";
+    const nombreElemento = document.getElementById("sidebarNombre");
+    const rolElemento = document.getElementById("sidebarRol");
+    if (nombreElemento) nombreElemento.textContent = `Hola, ${nombre.trim().split(/\s+/)[0]}`;
+    if (rolElemento) rolElemento.textContent = formatearRolVisible(usuario);
+    const avatar = document.getElementById("sidebarAvatarImg");
+    const icono = document.getElementById("sidebarAvatarIcon");
+    const foto = usuario.fotoBase64 || usuario.fotoURL || usuario.photoURL;
+    if (avatar && foto) {
+        avatar.onerror = function () {
+            avatar.hidden = true;
+            if (icono) icono.hidden = false;
+        };
+        avatar.src = foto;
+        avatar.hidden = false;
+        if (icono) icono.hidden = true;
+    } else if (avatar) {
+        avatar.hidden = true;
+        if (icono) icono.hidden = false;
+    }
+
+}
+
+function configurarModalEmergencia() {
+    const modal = document.getElementById("modalEmergencia");
+    const botonAbrir = document.getElementById("btnEmergencia");
+    const botonMobile = document.getElementById("btnEmergenciaMobile");
+    const botonCerrar = document.getElementById("cerrarModal");
+    const cerrar = () => {
+        if (typeof window.cancelAlertCountdown === "function") {
+            window.cancelAlertCountdown();
+        }
+        if (modal) modal.classList.remove("mostrar");
+    };
+    const abrir = () => {
+        if (typeof window.resetAlertModal === "function") window.resetAlertModal();
+        if (modal) modal.classList.add("mostrar");
+    };
+
+    if (botonAbrir) botonAbrir.addEventListener("click", abrir);
+    if (botonMobile) botonMobile.addEventListener("click", abrir);
+    if (botonCerrar) botonCerrar.addEventListener("click", cerrar);
+    if (modal) {
+        modal.addEventListener("click", (evento) => {
+            if (evento.target === modal) cerrar();
+        });
+    }
+    document.addEventListener("keydown", (evento) => {
+        if (evento.key === "Escape") cerrar();
+    });
+}
+
+function actualizarContadorMapa() {
+    const contador = document.getElementById("contadorAlertas");
+    if (!contador) return;
+
+    try {
+        let alertas = [];
+        if (Array.isArray(window.coalertaAlertasMapa)) {
+            alertas = window.coalertaAlertasMapa;
+        } else if (window.coalertaData) {
+            alertas = window.coalertaData.getAlerts();
+        }
+        contador.textContent = String(Array.isArray(alertas)
+            ? alertas.filter((alerta) => !["Descartada", "Emergencia Concluida"].includes(alerta.estado)).length
+            : 0);
+    } catch (error) {
+        console.error("No se pudo actualizar el contador de alertas:", error);
+    }
+}
+
+function configurarPeriodoMapa() {
+    const filtro = document.getElementById("filtroTiempoMapa");
+    if (filtro) filtro.addEventListener("change", aplicarFiltrosMapa);
+    actualizarContadorUnidades();
+}
+
+function configurarTemaMapa() {
+    const button = document.getElementById("btnModoOscuroMapa");
+    if (!button) return;
+    const saved = localStorage.getItem("coalertaTemaMapa");
+    const now = new Date();
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const night = saved ? saved === "oscuro" : minutes >= 18 * 60 + 30 || minutes < 6 * 60;
+    document.body.classList.toggle("mapa-nocturno", night);
+    button.textContent = night ? "Modo claro" : "Modo nocturno";
+    button.addEventListener("click", function () {
+        const enable = !document.body.classList.contains("mapa-nocturno");
+        document.body.classList.toggle("mapa-nocturno", enable);
+        localStorage.setItem("coalertaTemaMapa", enable ? "oscuro" : "claro");
+        button.textContent = enable ? "Modo claro" : "Modo nocturno";
+    });
+}
+
+function actualizarContadorUnidades() {
+    const counter = document.getElementById("contadorUnidades");
+    if (!counter) return;
+    const patrols = window.coalertaData ? window.coalertaData.getPatrols() : [];
+    counter.textContent = String(patrols.filter((patrol) => patrol.estado !== "Fuera de servicio").length);
+}
+
+function formatTime(timestamp) {
+    const date = new Date(timestamp || 0);
+    return Number.isFinite(date.getTime()) ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+}
