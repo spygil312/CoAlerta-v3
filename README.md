@@ -11,7 +11,7 @@ El árbol de código actual no incluye un manifiesto web ni un service worker; p
 ## 🚀 Demo en Vivo
 
 El proyecto se encuentra desplegado y accesible para el público a través de GitHub Pages:
-🔗 **https://spygil312.github.io/CoAlerta/**
+🔗 **https://spygil312.github.io/CoAlerta-v3/**
 
 ---
 
