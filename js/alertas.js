@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
     const maxReportGpsAccuracyMetros = 1000000;
+    const modal = document.getElementById("modalEmergencia");
     const grid = document.querySelector(".modal-alertas-grid");
     const countdown = document.getElementById("confirmacionCuentaRegresiva");
     const countdownNumber = document.getElementById("cuentaRegresivaNumero");
@@ -39,7 +40,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("pagehide", () => configureAssignedPatrolListener(null), { once: true });
     window.addEventListener("coalerta:ubicacion-mapa-actualizada", renderAlerts);
     window.addEventListener("coalerta:alerta-reportada", function (event) {
-        recentlySubmittedAlert = event.detail?.alerta || null;
+        recentlySubmittedAlert = event.detail && event.detail.alerta || null;
         renderAlerts();
     });
     window.addEventListener("coalerta:error", function (event) {
@@ -139,7 +140,7 @@ document.addEventListener("DOMContentLoaded", function () {
             renderUserResponse(window.coalertaData.getMyAlerts());
             return;
         }
-        if (!gpsConsent?.checked) {
+        if (!gpsConsent || !gpsConsent.checked) {
             showFailure("Debes aceptar el uso de tu ubicación GPS para enviar el reporte.");
             return;
         }
@@ -180,7 +181,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 window.clearInterval(activeTimer);
                 activeTimer = null;
                 if (navigator.vibrate) navigator.vibrate([100, 50, 180]);
-                void submitAlert(selectedCategory, positionResult);
+                submitAlert(selectedCategory, positionResult);
             }
         }, 50);
     }
@@ -199,7 +200,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     async function submitAlert(category, positionResult) {
-        if (!gpsConsent?.checked) {
+        if (!gpsConsent || !gpsConsent.checked) {
             showFailure("Debes aceptar el uso de tu ubicación GPS para enviar el reporte.");
             return;
         }
@@ -225,7 +226,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     "El navegador no proporcionó una precisión GPS válida. Revisa los permisos de ubicación e inténtalo nuevamente. No se envió ninguna alerta."
                 );
             }
-            if (!gpsConsent?.checked) {
+            if (!gpsConsent || !gpsConsent.checked) {
                 throw new Error("Debes aceptar el uso de tu ubicación GPS para enviar el reporte.");
             }
 
@@ -288,22 +289,19 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function renderAlerts() {
-        const currentProfile = window.coalertaData?.getProfile();
+        const currentProfile = window.coalertaData && window.coalertaData.getProfile();
         if (recentlySubmittedAlert &&
-            recentlySubmittedAlert.uid !== currentProfile?.uid) {
+            recentlySubmittedAlert.uid !== (currentProfile && currentProfile.uid)) {
             recentlySubmittedAlert = null;
         }
         const list = document.getElementById("alertasLista");
         if (!list) return;
-        if (!window.coalertaData?.isReady()) {
-            let message;
-            if (window.coalertaData?.isRegistrationIncomplete()) {
-                message = "Tu cuenta aún no terminó de registrarse. Completa el registro para enviar y consultar alertas.";
-            } else if (window.coalertaData?.getProfile()) {
-                message = "Conectando con el servidor de alertas…";
-            } else {
-                message = "Inicia sesión para consultar alertas.";
-            }
+        if (!window.coalertaData || !window.coalertaData.isReady()) {
+            const message = window.coalertaData && window.coalertaData.isRegistrationIncomplete()
+                ? "Tu cuenta aún no terminó de registrarse. Completa el registro para enviar y consultar alertas."
+                : window.coalertaData && window.coalertaData.getProfile()
+                ? "Conectando con el servidor de alertas…"
+                : "Inicia sesión para consultar alertas.";
             list.replaceChildren(makeEmpty(message));
             updateCounter(0);
             return;
@@ -428,13 +426,8 @@ document.addEventListener("DOMContentLoaded", function () {
         top.className = "alerta-item-top";
         const title = document.createElement("strong");
         const titleType = alertType;
-        const titleParts = [];
-        if (alert.esReporteReciente || alert.esReportePropio) titleParts.push("Tu reporte");
-        const isGroupIncident = Number(alert.reportes) > 1;
-        if (isGroupIncident) titleParts.push("Incidente Grupal");
-        titleParts.push(titleType || "Alerta");
-        if (isGroupIncident) titleParts.push(`${alert.reportes} reportes`);
-        title.textContent = titleParts.join(" · ");
+        title.textContent = `${alert.esReporteReciente || alert.esReportePropio ? "Tu reporte · " : ""}` +
+            `${Number(alert.reportes) > 1 ? "Incidente Grupal · " : ""}${titleType || "Alerta"}${Number(alert.reportes) > 1 ? ` · ${alert.reportes} reportes` : ""}`;
         const elapsed = document.createElement("span");
         elapsed.className = "alerta-tiempo";
         elapsed.textContent = elapsedTime(alert.timestamp);
@@ -521,20 +514,21 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         const isEnRoute = ["Auxilio en camino", "Atendiendo"].includes(latest.estado);
-        if (isEnRoute) {
-            title.textContent = "Auxilio en camino";
-            detail.textContent = responseDetail(latest);
-        } else if (latest.estado === "Agentes en sitio") {
-            title.textContent = "Agentes de serenazgo en su ubicación";
-            detail.textContent = "El agente de la unidad asignada marcó su llegada a la ubicación del incidente.";
-        } else if (latest.estado === "Derivada a Central") {
-            title.textContent = "Alerta canalizada a la central";
-            detail.textContent = "La alerta fue validada por el coordinador de tu comunidad.";
-        } else {
-            title.textContent = "Alerta recibida por la central";
-            detail.textContent = "Tu alerta fue guardada y la central puede verla.";
-        }
+        title.textContent = isEnRoute
+            ? "Auxilio en camino"
+            : latest.estado === "Agentes en sitio"
+                ? "Agentes de serenazgo en su ubicación"
+                : latest.estado === "Derivada a Central"
+                    ? "Alerta canalizada a la central"
+                    : "Alerta recibida por la central";
         panel.classList.toggle("respuesta-vecino-en-camino", isEnRoute);
+        detail.textContent = isEnRoute
+            ? responseDetail(latest)
+            : latest.estado === "Agentes en sitio"
+                ? "El agente de la unidad asignada marcó su llegada a la ubicación del incidente."
+                : latest.estado === "Derivada a Central"
+                    ? "La alerta fue validada por el coordinador de tu comunidad."
+                    : "Tu alerta fue guardada y la central puede verla.";
         panel.hidden = false;
         configureAssignedPatrolListener(latest);
         const responseKey = `${latest.id}:${latest.estado}`;
@@ -562,7 +556,7 @@ document.addEventListener("DOMContentLoaded", function () {
     function getLatestActiveOwnAlert(alerts) {
         const ownAlerts = Array.isArray(alerts)
             ? alerts
-            : window.coalertaData?.getMyAlerts() || [];
+            : window.coalertaData && window.coalertaData.getMyAlerts() || [];
         return ownAlerts
             .filter(isTrackedActiveAlert)
             .sort((a, b) => new Date(b.ultimaActualizacion || b.timestamp || 0) -
@@ -628,10 +622,9 @@ document.addEventListener("DOMContentLoaded", function () {
     function responseDetail(alert) {
         const unitCode = alert.unidad || alert.patrullaId || "Unidad asignada";
         const distance = getResponseDistance(alert);
-        let eta = null;
-        if (Number.isFinite(distance)) {
-            eta = distance === 0 ? 0 : Math.max(1, Math.ceil(distance / (40000 / 60)));
-        }
+        const eta = Number.isFinite(distance)
+            ? distance === 0 ? 0 : Math.max(1, Math.ceil(distance / (40000 / 60)))
+            : null;
         const distanceText = Number.isFinite(distance)
             ? `Distancia: ${Math.round(distance)} m`
             : "Distancia: calculándose";
@@ -640,12 +633,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function getResponseDistance(alert) {
-        if (assignedPatrol?.latitud == null || assignedPatrol?.longitud == null ||
+        if (!assignedPatrol || assignedPatrol.latitud == null || assignedPatrol.longitud == null ||
             alert.latitud == null || alert.longitud == null ||
             !Number.isFinite(Number(assignedPatrol.latitud)) ||
             !Number.isFinite(Number(assignedPatrol.longitud)) ||
             !Number.isFinite(Number(alert.latitud)) || !Number.isFinite(Number(alert.longitud))) {
-            return Number.NaN;
+            return NaN;
         }
         return window.coalertaData.distanceMeters(
             { latitud: Number(assignedPatrol.latitud), longitud: Number(assignedPatrol.longitud) },
@@ -680,7 +673,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const header = new DataView(wav.buffer);
         const writeText = (offset, value) => {
             for (let index = 0; index < value.length; index += 1) {
-                wav[offset + index] = value.codePointAt(index);
+                wav[offset + index] = value.charCodeAt(index);
             }
         };
         writeText(0, "RIFF");
@@ -825,6 +818,19 @@ document.addEventListener("DOMContentLoaded", function () {
         return element;
     }
 
+    function getUserFacingError(error, fallback) {
+        if (error && (error.code === "permission-denied" || error.code === "unauthenticated")) {
+            return "No tienes permiso para completar esta acción.";
+        }
+        if (error && error.code === "resource-exhausted") {
+            return "El servicio está temporalmente saturado. Inténtalo más tarde.";
+        }
+        if (error && (error.code === "unavailable" || error.code === "network-request-failed")) {
+            return "Error de conexión. Inténtalo de nuevo.";
+        }
+        return fallback;
+    }
+
     function isWithinVerifiedNearbyRadius(alert) {
         const location = window.coalertaUbicacionMapa;
         if (!location ||
@@ -840,19 +846,6 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 });
 
-function getUserFacingError(error, fallback) {
-    if (error?.code === "permission-denied" || error?.code === "unauthenticated") {
-        return "No tienes permiso para completar esta acción.";
-    }
-    if (error?.code === "resource-exhausted") {
-        return "El servicio está temporalmente saturado. Inténtalo más tarde.";
-    }
-    if (error?.code === "unavailable" || error?.code === "network-request-failed") {
-        return "Error de conexión. Inténtalo de nuevo.";
-    }
-    return fallback;
-}
-
 function normalizeType(type) {
     const value = String(type || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     if (value.includes("robo")) return "robo";
@@ -863,23 +856,15 @@ function normalizeType(type) {
 }
 
 function typeClass(type) {
-    const classes = {
-        robo: "robo",
-        sospechoso: "sospechoso",
-        accidente: "accidente",
-        incendio: "incendio"
-    };
-    return classes[normalizeType(type)] || "robo";
+    const value = normalizeType(type);
+    return value === "robo" ? "robo" : value === "sospechoso" ? "sospechoso" :
+        value === "accidente" ? "accidente" : value === "incendio" ? "incendio" : "robo";
 }
 
 function typeIcon(type) {
-    const icons = {
-        robo: "fa-mask-face",
-        sospechoso: "fa-user-secret",
-        accidente: "fa-truck-medical",
-        incendio: "fa-fire"
-    };
-    return icons[normalizeType(type)] || "fa-triangle-exclamation";
+    const value = normalizeType(type);
+    return value === "robo" ? "fa-mask-face" : value === "sospechoso" ? "fa-user-secret" :
+        value === "accidente" ? "fa-truck-medical" : value === "incendio" ? "fa-fire" : "fa-triangle-exclamation";
 }
 
 function elapsedTime(timestamp) {

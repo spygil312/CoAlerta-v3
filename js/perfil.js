@@ -14,17 +14,16 @@ document.addEventListener("DOMContentLoaded", function () {
     const formPerfil = document.getElementById("formPerfil");
     const formPassword = document.getElementById("formPassword");
     const formContactos = document.getElementById("formContactos");
-    const formEliminarCuenta = document.getElementById("formEliminarCuenta");
+    const formDesactivarCuenta = document.getElementById("formDesactivarCuenta");
     const mensajePerfil = document.getElementById("mensajePerfil");
     const mensajePassword = document.getElementById("mensajePassword");
     const mensajeContactos = document.getElementById("mensajeContactos");
-    const mensajeEliminacion = document.getElementById("mensajeEliminacion");
+    const mensajeDesactivacion = document.getElementById("mensajeDesactivacion");
     const inputTelefono = document.getElementById("telefono");
     const botonFoto = document.getElementById("btnCambiarFoto");
     const inputFoto = document.getElementById("inputFoto");
     const botonesMostrarPassword = document.querySelectorAll(".ver-password");
     const usuarioGuardado = leerUsuarioGuardado();
-    let datosCuentaEliminados = false;
 
     mostrarUsuario(usuarioGuardado);
     configurarPreferencias();
@@ -61,14 +60,14 @@ document.addEventListener("DOMContentLoaded", function () {
     if (formContactos) {
         formContactos.addEventListener("submit", guardarContactosEmergencia);
     }
-    if (formEliminarCuenta) {
-        formEliminarCuenta.addEventListener("submit", eliminarCuenta);
+    if (formDesactivarCuenta) {
+        formDesactivarCuenta.addEventListener("submit", eliminarCuenta);
     }
 
-    ["contacto1Telefono", "contacto2Telefono", "dniEliminacion"].forEach((id) => {
+    ["contacto1Telefono", "contacto2Telefono", "dniDesactivacion"].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.addEventListener("input", function () {
-            this.value = this.value.replace(/\D/g, "").slice(0, id === "dniEliminacion" ? 8 : 9);
+            this.value = this.value.replace(/\D/g, "").slice(0, id === "dniDesactivacion" ? 8 : 9);
         });
     });
 
@@ -171,11 +170,7 @@ document.addEventListener("DOMContentLoaded", function () {
         establecerTexto("estadoSolicitudRol", solicitud);
         establecerRol(rol);
         mostrarContactosEmergencia(usuario.contactosEmergencia);
-        establecerTexto(
-            "preguntaSeguridadActual",
-            "Para eliminarla, confirma el DNI asociado y vuelve a autenticarte con tu proveedor de acceso."
-        );
-        establecerValor("dniEliminacion", usuario.dni || "");
+        establecerValor("dniDesactivacion", usuario.dni || "");
 
         const imagen = usuario.fotoBase64 || usuario.fotoURL || usuario.photoURL;
         if (imagen) mostrarFoto(imagen);
@@ -389,7 +384,7 @@ document.addEventListener("DOMContentLoaded", function () {
         establecerCargando(formPerfil, true);
         try {
             if (usuarioAuth && correo !== correoAnterior) {
-                await reautenticarUsuario(usuarioAuth, "cambiar el correo");
+                await reautenticarParaCambioCorreo(usuarioAuth);
                 await updateEmail(usuarioAuth, correo);
                 await usuarioAuth.getIdToken(true);
                 correoAuthActualizado = true;
@@ -469,7 +464,7 @@ document.addEventListener("DOMContentLoaded", function () {
             }
         }
         const usuarioAuth = typeof auth !== "undefined" ? auth.currentUser : null;
-        if (!usuarioAuth || !window.coalertaData || !window.coalertaData.isReady()) {
+        if (!usuarioAuth || !window.coalertaData) {
             mostrarMensaje(mensajeContactos, "Inicia sesión y espera la conexión con Firebase para guardar los contactos.", "error");
             return;
         }
@@ -492,64 +487,70 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function eliminarCuenta(evento) {
         evento.preventDefault();
-        limpiarMensaje(mensajeEliminacion);
-        const dni = document.getElementById("dniEliminacion").value.trim();
+        limpiarMensaje(mensajeDesactivacion);
+        const dni = document.getElementById("dniDesactivacion").value.trim();
         const usuarioAuth = typeof auth !== "undefined" ? auth.currentUser : null;
         if (!/^\d{8}$/.test(dni)) {
-            mostrarMensaje(mensajeEliminacion, "Ingresa un DNI válido de 8 dígitos para confirmar la eliminación.", "error");
+            mostrarMensaje(mensajeDesactivacion, "Ingresa un DNI válido de 8 dígitos para confirmar la eliminación.", "error");
             return;
         }
-        if (!usuarioAuth || !window.coalertaData ||
-            !datosCuentaEliminados && !window.coalertaData.isReady()) {
-            mostrarMensaje(mensajeEliminacion, "Inicia sesión y espera la conexión con Firebase para eliminar la cuenta.", "error");
+        if (!usuarioAuth || !window.coalertaData) {
+            mostrarMensaje(mensajeDesactivacion, "Inicia sesión y espera la conexión con Firebase para eliminar la cuenta.", "error");
             return;
         }
         if (!window.confirm(
-            "La eliminación es permanente. Se borrarán tu perfil y datos personales, y se anonimizarán tus reportes. " +
-            "Los registros de auditoría operativa pueden conservarse. ¿Deseas continuar?"
+            "¿Eliminar definitivamente tu cuenta? Se borrarán tus datos personales y se anonimizará tu autoría en los registros compartidos. Esta acción no se puede deshacer."
         )) return;
-        establecerCargando(formEliminarCuenta, true);
+        establecerCargando(formDesactivarCuenta, true);
+        let datosEliminados = false;
         try {
-            await reautenticarUsuario(usuarioAuth, "eliminar permanentemente la cuenta");
-            if (!datosCuentaEliminados) {
-                await window.coalertaData.deleteAccountData(dni);
-                datosCuentaEliminados = true;
-                limpiarDatosLocales(usuarioAuth.uid);
-            }
+            await reautenticarParaEliminarCuenta(usuarioAuth);
+            await window.coalertaData.deleteAccount(dni);
+            datosEliminados = true;
+            localStorage.removeItem("coalerta_usuario");
+            localStorage.removeItem("coalertaSesion");
+            localStorage.removeItem("userRole");
+            localStorage.removeItem("coalerta_ubicacion_sesion");
+            localStorage.removeItem(`coalertaPreferencias:${usuarioAuth.uid}`);
+            localStorage.removeItem(`coalertaPreferenciasPendientes:${usuarioAuth.uid}`);
             await deleteUser(usuarioAuth);
             window.location.replace("login.html");
         } catch (error) {
-            console.error("No se pudo completar la eliminación de la cuenta:", error);
-            const mensaje = datosCuentaEliminados
-                ? "Tus datos ya fueron eliminados, pero Firebase no pudo borrar el acceso. No cierres esta sesión; vuelve a pulsar el botón para reintentar."
-                : error.message || "No se pudo eliminar la cuenta. No se completó el borrado.";
-            mostrarMensaje(mensajeEliminacion, mensaje, "error");
+            console.error("No se pudo eliminar la cuenta:", error);
+            const mensaje = datosEliminados
+                ? "Tus datos de CoAlerta ya se eliminaron, pero Firebase Authentication no pudo cerrar la cuenta. Vuelve a autenticarte e inténtalo nuevamente."
+                : error.message || "No se pudo eliminar la cuenta. No cierres esta sesión y vuelve a intentarlo.";
+            mostrarMensaje(mensajeDesactivacion, mensaje, "error");
         } finally {
-            establecerCargando(formEliminarCuenta, false);
+            establecerCargando(formDesactivarCuenta, false);
         }
     }
 
-    function limpiarDatosLocales(uid) {
-        try {
-            [
-                "coalerta_usuario",
-                "coalertaSesion",
-                "userRole",
-                "coalerta_correo_recordado",
-                `coalertaPreferencias:${uid}`,
-                `coalertaPreferenciasPendientes:${uid}`
-            ].forEach((key) => localStorage.removeItem(key));
-        } catch (error) {
-            console.error("No se pudieron eliminar todos los datos locales de la cuenta:", error);
-        }
-    }
-
-    async function reautenticarUsuario(usuarioAuth, accion) {
+    async function reautenticarParaEliminarCuenta(usuarioAuth) {
         const proveedores = (usuarioAuth.providerData || []).map((proveedor) => proveedor.providerId);
         if (proveedores.includes("password")) {
-            const contrasena = window.prompt(`Por seguridad, ingresa tu contraseña actual para ${accion}.`);
-            if (contrasena === null) throw new Error("Operación cancelada.");
-            if (!contrasena) throw new Error(`Debes ingresar tu contraseña actual para ${accion}.`);
+            const contrasena = window.prompt("Por seguridad, ingresa tu contraseña actual para eliminar la cuenta.");
+            if (contrasena === null) throw new Error("Eliminación cancelada.");
+            if (!contrasena) throw new Error("Debes ingresar tu contraseña actual.");
+            await reauthenticateWithCredential(
+                usuarioAuth,
+                EmailAuthProvider.credential(usuarioAuth.email, contrasena)
+            );
+            return;
+        }
+        if (proveedores.includes("google.com")) {
+            await reauthenticateWithPopup(usuarioAuth, new GoogleAuthProvider());
+            return;
+        }
+        throw new Error("Tu proveedor de inicio de sesión no permite verificar la identidad desde esta página.");
+    }
+
+    async function reautenticarParaCambioCorreo(usuarioAuth) {
+        const proveedores = (usuarioAuth.providerData || []).map((proveedor) => proveedor.providerId);
+        if (proveedores.includes("password")) {
+            const contrasena = window.prompt("Por seguridad, ingresa tu contraseña actual para cambiar el correo.");
+            if (contrasena === null) throw new Error("Cambio de correo cancelado.");
+            if (!contrasena) throw new Error("Debes ingresar tu contraseña actual para cambiar el correo.");
             const credential = EmailAuthProvider.credential(usuarioAuth.email, contrasena);
             await reauthenticateWithCredential(usuarioAuth, credential);
             return;
@@ -558,7 +559,7 @@ document.addEventListener("DOMContentLoaded", function () {
             await reauthenticateWithPopup(usuarioAuth, new GoogleAuthProvider());
             return;
         }
-        throw new Error("Tu proveedor de inicio de sesión no permite verificar tu identidad desde esta página.");
+        throw new Error("Tu proveedor de inicio de sesión no permite cambiar el correo desde esta página.");
     }
 
     function configurarMostrarContrasenas() {

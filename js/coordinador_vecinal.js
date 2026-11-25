@@ -245,12 +245,10 @@ document.addEventListener("DOMContentLoaded", function () {
     function updateRoleView() {
         const isCoordinator = activeRole === "coordinador";
         const isAdminViewer = ["administrador", "admin"].includes(activeRole);
-        const pageTitle = isCoordinator
+        document.getElementById("tituloVista").textContent = isCoordinator
             ? "Panel de coordinación vecinal"
             : isAdminViewer ? "Vista del panel de coordinación"
                 : "Consola de despacho";
-        document.getElementById("tituloVista").textContent = pageTitle;
-        document.getElementById("migaPanelCentral").textContent = pageTitle;
         document.getElementById("descripcionVista").textContent = isCoordinator
             ? "Revisa incidentes activos, deriva alertas y publica avisos oficiales de tu comunidad."
             : isAdminViewer

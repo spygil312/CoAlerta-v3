@@ -3,20 +3,6 @@
     const claveUbicacion = "coalerta_ubicacion_sesion";
     const vigenciaMs = 15 * 60 * 1000;
 
-    window.coalertaDistanciaEnMetros = function (first, second) {
-        if (![first.latitud, first.longitud, second.latitud, second.longitud]
-            .every(Number.isFinite)) {
-            return Infinity;
-        }
-        const radians = (degrees) => degrees * Math.PI / 180;
-        const latitudeDelta = radians(second.latitud - first.latitud);
-        const longitudeDelta = radians(second.longitud - first.longitud);
-        const a = Math.sin(latitudeDelta / 2) ** 2 +
-            Math.cos(radians(first.latitud)) * Math.cos(radians(second.latitud)) *
-            Math.sin(longitudeDelta / 2) ** 2;
-        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    };
-
     window.coalertaObtenerUbicacionActual = function (forzarActualizacion) {
         if (solicitudEnCurso) return solicitudEnCurso;
 
@@ -145,7 +131,8 @@
                 throw new Error(`Photon respondió con estado ${response.status}.`);
             }
             const result = await response.json();
-            const properties = result.features?.[0]?.properties || {};
+            const properties = result.features && result.features[0] &&
+                result.features[0].properties || {};
             const street = [properties.street, properties.housenumber]
                 .filter(Boolean).join(" ") || properties.name || "";
             const district = properties.district || properties.city || properties.county ||

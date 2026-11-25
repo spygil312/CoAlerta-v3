@@ -10,10 +10,33 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/svg+xml" href="../assets/svg/logo.svg?v=2">
-    <script src="../js/role-navigation.js?v=role-nav-20261123"></script>
-    <link rel="stylesheet" href="../css/global.css?v=css-global-cleanup-20261123">
-    <link rel="stylesheet" href="../css/sitio.css?v=sitio-mobile-readable-20261123">
-    <link rel="stylesheet" href="../css/aplicacion.css?v=community-leave-button-20261123">
+    <script>
+        (function () {
+            try {
+                const profile = JSON.parse(localStorage.getItem("coalerta_usuario") || "null");
+                const cachedRole = JSON.parse(localStorage.getItem("userRole") || "null");
+                if (localStorage.getItem("coalertaSesion") === "activa" &&
+                    profile && cachedRole && profile.uid === cachedRole.uid &&
+                    String(profile.rol || "").trim().toLowerCase() === cachedRole.role) {
+                    if (cachedRole.isAdmin === true) document.documentElement.classList.add("role-admin");
+                    if (cachedRole.isAdmin === true ||
+                        ["coordinador", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-coordinator");
+                    }
+                    if (cachedRole.isAdmin === true ||
+                        ["agente", "seguridad", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-security");
+                    }
+                }
+            } catch (error) {
+                console.warn("No se pudo recuperar el rol guardado para el menú:", error);
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/estilos.css?v=native-scrollbar-20261125-4">
+    <link rel="stylesheet" href="../css/responsive.css?v=mobile-type-review-20261125">
+    <link rel="stylesheet" href="../css/mapa.css?v=mobile-map-type-20261125-7">
+    <link rel="stylesheet" href="../css/comunidad.css?v=community-leave-dialog-20261125">
     <script src="../js/tema.js?v=20261029-theme-scroll"></script>
 </head>
 
@@ -71,7 +94,7 @@
                 </div>
             </div>
 
-            <nav class="sidebar-menu" aria-label="Secciones de la aplicación">
+            <nav class="sidebar-menu">
                 <a href="mapa.html">
                     <i class="fa-solid fa-map-location-dot"></i>
                     <span>Mapa</span>
@@ -102,6 +125,16 @@
                 </a>
             </nav>
 
+            <div class="sidebar-estado">
+                <div class="sidebar-estado-icono">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <strong>Zona monitoreada</strong>
+                    <span>Seguridad disponible</span>
+                </div>
+            </div>
+
             <a href="login.html" class="cerrar-sesion" id="btnCerrarSesionLateral">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 Cerrar sesión
@@ -110,12 +143,6 @@
 
         <main class="mapa-contenido comunidad-contenido">
             <div class="comunidad-scroll">
-                <nav class="migas-pan" aria-label="Migas de pan">
-                    <ol>
-                        <li><a href="mapa.html">Inicio</a></li>
-                        <li aria-current="page">Mi comunidad</li>
-                    </ol>
-                </nav>
                 <div class="comunidad-superior">
                     <h1>Mi comunidad</h1>
                     <p>Conecta con tus vecinos, mantente informado y construyamos juntos un barrio más seguro.</p>
@@ -143,7 +170,7 @@
                         <h2 id="tituloAreaCercana">Lugares cercanos a tu ubicación</h2>
                         <p id="estadoUbicacion" aria-live="polite">Buscando lugares cercanos. El navegador te pedirá
                             permiso para usar tu ubicación.</p>
-                        <small>La ubicación se consulta en OpenStreetMap.</small>
+                        <small>La ubicación se consulta en OpenStreetMap y no se guarda en CoAlerta.</small>
                     </div>
                 </div>
 
@@ -306,6 +333,36 @@
             </div>
         </div>
 
+        <div id="modal-salir-comunidad" class="modal-overlay" role="dialog" aria-modal="true"
+            aria-labelledby="modal-salir-comunidad-titulo"
+            aria-describedby="modal-salir-comunidad-descripcion">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modal-salir-comunidad-titulo">Salir de la comunidad</h3>
+                </div>
+                <div class="modal-body">
+                    <p id="modal-salir-comunidad-descripcion">
+                        Dejarás de recibir los avisos de esta comunidad. Tu cuenta seguirá activa y podrás unirte a otra
+                        comunidad después con un código de invitación.
+                    </p>
+                    <p class="salir-comunidad-aviso">
+                        Si tienes una unidad de seguridad asignada, un administrador deberá retirarla antes de confirmar
+                        la salida.
+                    </p>
+                    <p id="estado-salida-comunidad" class="salir-comunidad-estado" role="status"
+                        aria-live="polite" tabindex="0"></p>
+                    <div class="salir-comunidad-acciones">
+                        <button id="btn-cancelar-salida" class="btn-secundario-pequeno" type="button">
+                            Cancelar
+                        </button>
+                        <button id="btn-confirmar-salida" class="btn-confirmar-salida" type="button">
+                            Confirmar salida
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="modal-perfil-vecino" class="modal-overlay">
             <div class="modal-content">
                 <div class="modal-header">
@@ -369,8 +426,8 @@
     <script type="module" src="../js/estado-cuenta.js?v=modular-sdk-1"></script>
     <script src="../js/ubicacion.js?v=shared-distance-utils-20261111"></script>
     <script src="../js/notificaciones.js?v=alerts-sound-independent-20261112"></script>
-    <script type="module" src="../js/coalerta-data.js?v=community-leave-20261123"></script>
-    <script type="module" src="../js/comunidad.js?v=community-leave-20261123"></script>
+    <script type="module" src="../js/coalerta-data.js?v=community-leave-20261125"></script>
+    <script type="module" src="../js/comunidad.js?v=community-leave-20261125"></script>
 </body>
 
 </html>

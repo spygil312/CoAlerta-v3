@@ -12,10 +12,33 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="icon" type="image/svg+xml" href="../assets/svg/logo.svg?v=2">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="../js/role-navigation.js?v=role-nav-20261123"></script>
-    <link rel="stylesheet" href="../css/global.css?v=css-global-cleanup-20261123">
-    <link rel="stylesheet" href="../css/sitio.css?v=sitio-mobile-readable-20261123">
-    <link rel="stylesheet" href="../css/aplicacion.css?v=breadcrumbs-20261123">
+    <script>
+        (function () {
+            try {
+                const profile = JSON.parse(localStorage.getItem("coalerta_usuario") || "null");
+                const cachedRole = JSON.parse(localStorage.getItem("userRole") || "null");
+                if (localStorage.getItem("coalertaSesion") === "activa" &&
+                    profile && cachedRole && profile.uid === cachedRole.uid &&
+                    String(profile.rol || "").trim().toLowerCase() === cachedRole.role) {
+                    if (cachedRole.isAdmin === true) document.documentElement.classList.add("role-admin");
+                    if (cachedRole.isAdmin === true ||
+                        ["coordinador", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-coordinator");
+                    }
+                    if (cachedRole.isAdmin === true ||
+                        ["agente", "seguridad", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-security");
+                    }
+                }
+            } catch (error) {
+                console.warn("No se pudo recuperar el rol guardado para el menú:", error);
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/estilos.css?v=native-scrollbar-20261125-4">
+    <link rel="stylesheet" href="../css/responsive.css?v=mobile-type-review-20261125">
+    <link rel="stylesheet" href="../css/mapa.css?v=mobile-map-type-20261125-7">
+    <link rel="stylesheet" href="../css/coordinador_vecinal.css?v=remove-sla-dashboard-20261109-4">
     <script src="../js/tema.js?v=20261029-theme-scroll"></script>
 </head>
 
@@ -64,7 +87,7 @@
                 </div>
             </div>
 
-            <nav class="sidebar-menu" aria-label="Secciones de la aplicación">
+            <nav class="sidebar-menu">
                 <a href="mapa.html">
                     <i class="fa-solid fa-map-location-dot" aria-hidden="true"></i><span>Mapa</span>
                 </a>
@@ -88,6 +111,16 @@
                 </a>
             </nav>
 
+            <div class="sidebar-estado">
+                <div class="sidebar-estado-icono">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                </div>
+                <div>
+                    <strong>Zona monitoreada</strong>
+                    <span>Gestión de alertas vecinales</span>
+                </div>
+            </div>
+
             <button type="button" class="cerrar-sesion" id="btnCerrarSesionLateral">
                 <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
                 Cerrar sesión
@@ -97,12 +130,6 @@
         <section class="mapa-contenido central-main">
             <section class="central-intro">
                 <div>
-                    <nav class="migas-pan" aria-label="Migas de pan">
-                        <ol>
-                            <li><a href="mapa.html">Inicio</a></li>
-                            <li id="migaPanelCentral" aria-current="page">Panel de coordinación</li>
-                        </ol>
-                    </nav>
                     <p class="central-eyebrow">OPERACIONES DEL SECTOR</p>
                     <h1 id="tituloVista">Panel de coordinación vecinal</h1>
                     <p id="descripcionVista">Revisa incidentes activos, deriva alertas o publica avisos oficiales de tu
@@ -306,7 +333,7 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
     <script type="module" src="../js/estado-cuenta.js?v=modular-sdk-1"></script>
-    <script type="module" src="../js/coalerta-data.js?v=community-leave-20261123"></script>
+    <script type="module" src="../js/coalerta-data.js?v=account-deletion-rules-20261121"></script>
     <script src="../js/ubicacion.js?v=shared-distance-utils-20261111"></script>
     <script src="../js/notificaciones.js?v=alerts-sound-independent-20261112"></script>
     <script type="module" src="../js/coordinador_vecinal.js?v=coordinator-community-alerts-visible-20261114"></script>

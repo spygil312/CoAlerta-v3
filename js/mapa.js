@@ -22,7 +22,7 @@ const TIPOS_LUGAR_MAPA = {
     municipalidad: { icono: "fa-landmark", color: "marcador-lugar", etiqueta: "Municipalidad" },
     lugar: { icono: "fa-location-dot", color: "marcador-lugar", etiqueta: "Lugar importante" }
 };
-const TIPOS_LUGAR_PERMANENTES = new Set(["salud", "comisaria", "serenazgo", "bomberos", "municipalidad"]);
+const TIPOS_LUGAR_PERMANENTES = ["salud", "comisaria", "serenazgo", "bomberos", "municipalidad"];
 const ICONOS_LUGAR_MAPA = new Map();
 const SILUETA_PIN_LUGAR_MAPA = "M16 1.25C7.86 1.25 1.25 7.86 1.25 16c0 10.68 14.75 21.6 14.75 21.6S30.75 26.68 30.75 16C30.75 7.86 24.14 1.25 16 1.25z";
 const DATOS_ICONO_LUGAR_MAPA = {
@@ -70,8 +70,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const query = new URLSearchParams(window.location.search);
     const latitudeValue = query.get("lat");
     const longitudeValue = query.get("lng");
-    const targetLatitude = latitudeValue === null ? Number.NaN : Number(latitudeValue);
-    const targetLongitude = longitudeValue === null ? Number.NaN : Number(longitudeValue);
+    const targetLatitude = latitudeValue === null ? NaN : Number(latitudeValue);
+    const targetLongitude = longitudeValue === null ? NaN : Number(longitudeValue);
     let lugarObjetivo = null;
     if (Number.isFinite(targetLatitude) && Number.isFinite(targetLongitude) &&
         targetLatitude >= -90 && targetLatitude <= 90 &&
@@ -98,7 +98,7 @@ document.addEventListener("DOMContentLoaded", function () {
             status.textContent = "El proveedor del mapa no pudo cargar algunas imágenes. Revisa tu conexión e inténtalo nuevamente.";
             status.hidden = false;
         }
-        console.warn("El proveedor de mapas no pudo cargar una imagen:", event.tile?.src);
+        console.warn("El proveedor de mapas no pudo cargar una imagen:", event.tile && event.tile.src);
     });
     const grupoMarcadoresLugares = typeof L.markerClusterGroup === "function"
         ? L.markerClusterGroup({
@@ -129,8 +129,8 @@ document.addEventListener("DOMContentLoaded", function () {
         actualizarMarcadoresMapa();
     });
     window.addEventListener("coalerta:mis-alertas-actualizadas", actualizarMarcadoresMapa);
-    window.addEventListener("coalerta:patrullas-actualizadas", function () {
-        actualizarContadorUnidades();
+    window.addEventListener("coalerta:patrullas-actualizadas", function (event) {
+        actualizarContadorUnidades(event.detail);
     });
     window.addEventListener("coalerta:miembros-actualizados", function (event) {
         actualizarMarcadoresSerenazgo(event.detail, grupoMarcadoresSerenazgo);
@@ -145,17 +145,15 @@ document.addEventListener("DOMContentLoaded", function () {
         actualizarEstadoFirebaseMapa("connected");
     });
     window.addEventListener("coalerta:sesion-cambiada", function (event) {
-        const hasUser = Boolean(event.detail?.user);
-        const isReady = Boolean(window.coalertaData?.isReady());
+        const hasUser = Boolean(event.detail && event.detail.user);
+        const isReady = Boolean(window.coalertaData && window.coalertaData.isReady());
         if (!hasUser || event.detail.user.isAnonymous) configurarConsultaAlertasMapa(null);
-        let connectionStatus = "connecting";
-        if (event.detail?.registrationIncomplete) connectionStatus = "registration-incomplete";
-        else if (!hasUser) connectionStatus = "disconnected";
-        else if (isReady) connectionStatus = "connected";
-        actualizarEstadoFirebaseMapa(connectionStatus);
+        actualizarEstadoFirebaseMapa(event.detail && event.detail.registrationIncomplete
+            ? "registration-incomplete"
+            : !hasUser ? "disconnected" : isReady ? "connected" : "connecting");
     });
     window.addEventListener("coalerta:error", function (event) {
-        const area = event.detail?.area;
+        const area = event.detail && event.detail.area;
         if (["perfil", "alertas públicas", "incidentes operativos"].includes(area)) {
             actualizarEstadoFirebaseMapa("error");
         }
@@ -168,11 +166,11 @@ document.addEventListener("DOMContentLoaded", function () {
             configurarConsultaAlertasMapa(null);
             return;
         }
-        if (window.coalertaData?.isReady()) {
+        if (window.coalertaData && window.coalertaData.isReady()) {
             configurarConsultaAlertasMapa(window.coalertaData.getProfile());
         }
     });
-    if (window.coalertaData?.isReady()) {
+    if (window.coalertaData && window.coalertaData.isReady()) {
         configurarConsultaAlertasMapa(window.coalertaData.getProfile());
         actualizarMarcadoresSerenazgo(
             window.coalertaData.getCommunityMembers(),
@@ -180,7 +178,7 @@ document.addEventListener("DOMContentLoaded", function () {
         );
     }
     window.setInterval(() => {
-        if (window.coalertaData?.isReady()) {
+        if (window.coalertaData && window.coalertaData.isReady()) {
             actualizarMarcadoresSerenazgo(
                 window.coalertaData.getCommunityMembers(),
                 grupoMarcadoresSerenazgo
@@ -193,7 +191,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     actualizarContadorMapa();
     actualizarEstadoFirebaseMapa("connecting");
-    window.setTimeout(() => window.map?.invalidateSize(), 300);
+    window.setTimeout(() => window.map && window.map.invalidateSize(), 300);
     window.addEventListener("resize", () => {
         if (window.map) window.map.invalidateSize();
     });
@@ -206,7 +204,7 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 function configurarConsultaAlertasMapa(profile) {
-    const communityId = String(profile?.comunidadId || "").trim();
+    const communityId = String(profile && profile.comunidadId || "").trim();
     const context = communityId || "public";
     if (context === comunidadActualMapa && solicitudUbicacionMapa) return;
     comunidadActualMapa = context;
@@ -273,7 +271,7 @@ function actualizarMarcadoresSerenazgo(miembros, capa) {
     (Array.isArray(miembros) ? miembros : []).forEach((miembro) => {
         const actualizado = miembro.ubicacionActualizadaAt
             ? new Date(miembro.ubicacionActualizadaAt).getTime()
-            : Number.NaN;
+            : NaN;
         const latitud = Number(miembro.latitud);
         const longitud = Number(miembro.longitud);
         if (miembro.rol !== "seguridad" || miembro.ubicacionCompartida !== true ||
@@ -311,7 +309,7 @@ function leerLugaresGuardados() {
                 longitud: Number(lugar.longitud)
             }))
             .filter((lugar) =>
-                TIPOS_LUGAR_PERMANENTES.has(lugar.tipo) &&
+                TIPOS_LUGAR_PERMANENTES.includes(lugar.tipo) &&
                 Number.isFinite(lugar.latitud) && lugar.latitud >= -90 && lugar.latitud <= 90 &&
                 Number.isFinite(lugar.longitud) && lugar.longitud >= -180 && lugar.longitud <= 180);
     } catch (error) {
@@ -364,7 +362,7 @@ function mostrarLugaresCercanosEnMapa(capa, lugarObjetivo) {
 
     // Lugar seleccionado que no se guarda de forma permanente (bomberos, municipalidad)
     // o cuya lista ya venció: se muestra solo ese marcador.
-    if (!elegido && lugarObjetivo?.tipo) {
+    if (!elegido && lugarObjetivo && lugarObjetivo.tipo) {
         elegido = crearMarcadorLugar({
             nombre: lugarObjetivo.nombre || "Lugar seleccionado",
             tipo: TIPOS_LUGAR_MAPA[lugarObjetivo.tipo] ? lugarObjetivo.tipo : "lugar",
@@ -427,32 +425,46 @@ function configurarPanelAlertasMovil() {
 
 function actualizarEstadoFirebaseMapa(status) {
     const header = document.getElementById("estadoSistemaMapa");
+    const operationTitle = document.getElementById("estadoOperacionTitulo");
+    const operationDetail = document.getElementById("estadoOperacionDetalle");
     const backendStatus = document.getElementById("estadoBackendMapa");
     const stateContainer = document.querySelector(".estado-sistema");
     const labels = {
         connected: {
             header: "Conectado a CoAlerta",
+            title: "Gestión CoAlerta en línea",
+            detail: "No conectado a despacho municipal externo.",
             dashboard: "En línea"
         },
         connecting: {
             header: "Conectando…",
+            title: "Conectando al servidor",
+            detail: "Esperando conexión y autenticación.",
             dashboard: "Conectando"
         },
         error: {
             header: "Error de sincronización",
+            title: "Datos no sincronizados",
+            detail: "Revisa tu conexión e inténtalo nuevamente.",
             dashboard: "Sin conexión"
         },
         "registration-incomplete": {
             header: "Registro pendiente",
+            title: "Completa tu registro",
+            detail: "Finaliza la creación de tu cuenta para usar las alertas.",
             dashboard: "Registro pendiente"
         },
         disconnected: {
             header: "Sin sesión",
+            title: "Conexión requerida",
+            detail: "Inicia sesión para ver alertas en tiempo real.",
             dashboard: "Sin sesión"
         }
     };
     const current = labels[status] || labels.error;
     if (header) header.textContent = current.header;
+    if (operationTitle) operationTitle.textContent = current.title;
+    if (operationDetail) operationDetail.textContent = current.detail;
     if (backendStatus) backendStatus.textContent = current.dashboard;
     if (stateContainer) stateContainer.dataset.state = status;
 }
@@ -575,13 +587,9 @@ function mostrarMiUbicacion() {
         window.coalertaUbicacionMapa = ubicacionActualMapa;
         const precisionUsable = position.coords.accuracy <= precisionMaximaUbicacionAceptableMetros;
         const precisionSuficiente = position.coords.accuracy <= 5000;
-        if (!precisionUsable) {
-            window.coalertaEstadoUbicacionMapa = "inaccurate";
-        } else if (precisionSuficiente) {
-            window.coalertaEstadoUbicacionMapa = "ready";
-        } else {
-            window.coalertaEstadoUbicacionMapa = "approximate";
-        }
+        window.coalertaEstadoUbicacionMapa = !precisionUsable
+            ? "inaccurate"
+            : precisionSuficiente ? "ready" : "approximate";
         if (!precisionUsable) {
             console.warn("La ubicación del navegador es demasiado imprecisa para buscar alertas cercanas.");
         }
@@ -593,15 +601,11 @@ function mostrarMiUbicacion() {
         marcadorUsuario = L.marker([latitude, longitude], {
             icon: crearIconoMapa("fa-location-dot", "marcador-verde")
         }).addTo(window.map);
-        let popupContent;
-        if (!precisionUsable) {
-            popupContent = "<div class=\"popup-coalerta\"><strong>Ubicación demasiado imprecisa</strong><br>No se pueden filtrar alertas cercanas con esta ubicación.</div>";
-        } else if (precisionSuficiente) {
-            popupContent = "<div class=\"popup-coalerta\"><strong>Tu ubicación</strong><br>Estás aquí actualmente.</div>";
-        } else {
-            popupContent = "<div class=\"popup-coalerta\"><strong>Ubicación aproximada</strong><br>Las alertas se filtran en un radio de 5 km alrededor de esta ubicación estimada.</div>";
-        }
-        marcadorUsuario.bindPopup(popupContent);
+        marcadorUsuario.bindPopup(!precisionUsable
+            ? "<div class=\"popup-coalerta\"><strong>Ubicación demasiado imprecisa</strong><br>No se pueden filtrar alertas cercanas con esta ubicación.</div>"
+            : precisionSuficiente
+            ? "<div class=\"popup-coalerta\"><strong>Tu ubicación</strong><br>Estás aquí actualmente.</div>"
+            : "<div class=\"popup-coalerta\"><strong>Ubicación aproximada</strong><br>Las alertas se filtran en un radio de 5 km alrededor de esta ubicación estimada.</div>");
         marcadorUsuario.openPopup();
     }, function (error) {
         console.error("No se pudo obtener la ubicación:", error);
@@ -625,8 +629,8 @@ function mostrarMiUbicacion() {
 
 function cargarAlertasGuardadas() {
     const data = window.coalertaData;
-    const profile = data?.isReady() ? data.getProfile() : null;
-    const communityId = String(profile?.comunidadId || "").trim();
+    const profile = data && data.isReady() ? data.getProfile() : null;
+    const communityId = String(profile && profile.comunidadId || "").trim();
     const ownAlerts = data ? data.getMyAlerts() : [];
     const ownAlertIds = new Set(ownAlerts.map((alerta) => String(alerta.id)));
     const alerts = new Map((data ? data.getAlerts() : []).map((alerta) => [String(alerta.id), alerta]));
@@ -657,19 +661,26 @@ function cargarAlertasGuardadas() {
         const longitud = Number(alerta.longitudPublica ?? alerta.longitud);
         if (!Number.isFinite(latitud) || latitud < -90 || latitud > 90 ||
             !Number.isFinite(longitud) || longitud < -180 || longitud > 180) return false;
-        return data?.distanceMeters
+        return data && data.distanceMeters
             ? data.distanceMeters(
                 ubicacionActualMapa,
                 { latitud, longitud }
             ) <= 5000
-            : window.coalertaDistanciaEnMetros(
-                ubicacionActualMapa,
-                { latitud, longitud }
-            ) <= 5000;
+            : distanciaHaversine(ubicacionActualMapa, { latitud, longitud }) <= 5000;
     });
     window.coalertaAlertasMapa = activas;
     activas.forEach(agregarMarcadorAlerta);
     return activas.length;
+}
+
+function distanciaHaversine(first, second) {
+    const radians = (degrees) => degrees * Math.PI / 180;
+    const latitudeDelta = radians(second.latitud - first.latitud);
+    const longitudeDelta = radians(second.longitud - first.longitud);
+    const a = Math.sin(latitudeDelta / 2) ** 2 +
+        Math.cos(radians(first.latitud)) * Math.cos(radians(second.latitud)) *
+        Math.sin(longitudeDelta / 2) ** 2;
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 window.agregarAlertaAlMapa = function (alertaOrType, latitud, longitud, ubicacion = "Ubicación registrada") {
@@ -776,7 +787,7 @@ function aplicarFiltrosMapa() {
     }
     document.querySelectorAll("#alertasLista .alerta-item").forEach((alerta) => {
         const item = records.find((record) => String(record.id) === alerta.dataset.id);
-        const date = new Date(item?.timestamp || 0);
+        const date = new Date(item && item.timestamp || 0);
         const age = Date.now() - date.getTime();
         const timeMatches = periodo === "all" ||
             (periodo === "hour" && age <= 60 * 60 * 1000) ||
@@ -855,12 +866,9 @@ function actualizarContadorMapa() {
     if (!contador) return;
 
     try {
-        let alertas = [];
-        if (Array.isArray(window.coalertaAlertasMapa)) {
-            alertas = window.coalertaAlertasMapa;
-        } else if (window.coalertaData) {
-            alertas = window.coalertaData.getAlerts();
-        }
+        const alertas = Array.isArray(window.coalertaAlertasMapa)
+            ? window.coalertaAlertasMapa
+            : window.coalertaData ? window.coalertaData.getAlerts() : [];
         contador.textContent = String(Array.isArray(alertas)
             ? alertas.filter((alerta) => !["Descartada", "Emergencia Concluida"].includes(alerta.estado)).length
             : 0);

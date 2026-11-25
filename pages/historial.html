@@ -10,10 +10,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="icon" type="image/svg+xml" href="../assets/svg/logo.svg?v=2">
-    <script src="../js/role-navigation.js?v=role-nav-20261123"></script>
-    <link rel="stylesheet" href="../css/global.css?v=css-global-cleanup-20261123">
-    <link rel="stylesheet" href="../css/sitio.css?v=sitio-mobile-readable-20261123">
-    <link rel="stylesheet" href="../css/aplicacion.css?v=breadcrumbs-20261123">
+    <script>
+        (function () {
+            try {
+                const profile = JSON.parse(localStorage.getItem("coalerta_usuario") || "null");
+                const cachedRole = JSON.parse(localStorage.getItem("userRole") || "null");
+                if (localStorage.getItem("coalertaSesion") === "activa" &&
+                    profile && cachedRole && profile.uid === cachedRole.uid &&
+                    String(profile.rol || "").trim().toLowerCase() === cachedRole.role) {
+                    if (cachedRole.isAdmin === true) document.documentElement.classList.add("role-admin");
+                    if (cachedRole.isAdmin === true ||
+                        ["coordinador", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-coordinator");
+                    }
+                    if (cachedRole.isAdmin === true ||
+                        ["agente", "seguridad", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-security");
+                    }
+                }
+            } catch (error) {
+                console.warn("No se pudo recuperar el rol guardado para el menú:", error);
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/estilos.css?v=native-scrollbar-20261125-4">
+    <link rel="stylesheet" href="../css/responsive.css?v=mobile-type-review-20261125">
+    <link rel="stylesheet" href="../css/historial.css?v=mobile-history-type-20261125-2">
     <script src="../js/tema.js?v=20261029-theme-scroll"></script>
 </head>
 
@@ -71,7 +93,7 @@
                 </div>
             </div>
 
-            <nav class="sidebar-menu" aria-label="Secciones de la aplicación">
+            <nav class="sidebar-menu">
                 <a href="mapa.html">
                     <i class="fa-solid fa-map-location-dot"></i>
                     <span>Mapa</span>
@@ -102,6 +124,16 @@
                 </a>
             </nav>
 
+            <div class="sidebar-estado">
+                <div class="sidebar-estado-icono">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <strong id="estadoOperacionHistorial">Conexión requerida</strong>
+                    <span id="detalleOperacionHistorial">Inicia sesión para consultar tus reportes.</span>
+                </div>
+            </div>
+
             <a href="login.html" class="cerrar-sesion" id="btnCerrarSesionLateral">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 Cerrar sesión
@@ -109,12 +141,6 @@
         </aside>
 
         <section class="historial-contenido">
-            <nav class="migas-pan" aria-label="Migas de pan">
-                <ol>
-                    <li><a href="mapa.html">Inicio</a></li>
-                    <li aria-current="page">Historial de alertas</li>
-                </ol>
-            </nav>
             <div class="historial-superior">
                 <div>
                     <h1>Historial<span class="historial-titulo-resto"> de alertas</span></h1>
@@ -363,7 +389,7 @@
     <script type="module" src="../js/estado-cuenta.js?v=modular-sdk-1"></script>
     <script src="../js/ubicacion.js?v=shared-distance-utils-20261111"></script>
     <script src="../js/notificaciones.js?v=alerts-sound-independent-20261112"></script>
-    <script type="module" src="../js/coalerta-data.js?v=community-leave-20261123"></script>
+    <script type="module" src="../js/coalerta-data.js?v=account-deletion-rules-20261121"></script>
     <script type="module" src="../js/historial.js?v=shared-core-20261106"></script>
 </body>
 

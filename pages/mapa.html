@@ -13,11 +13,33 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
-    <script src="../js/role-navigation.js?v=role-nav-20261123"></script>
-    <link rel="stylesheet" href="../css/global.css?v=css-global-cleanup-20261123">
-    <link rel="stylesheet" href="../css/sitio.css?v=sitio-mobile-readable-20261123">
-    <link rel="stylesheet" href="../css/aplicacion.css?v=breadcrumbs-20261123">
-    <link rel="stylesheet" href="../css/alertas.css?v=alertas-mobile-readable-20261123">
+    <script>
+        (function () {
+            try {
+                const profile = JSON.parse(localStorage.getItem("coalerta_usuario") || "null");
+                const cachedRole = JSON.parse(localStorage.getItem("userRole") || "null");
+                if (localStorage.getItem("coalertaSesion") === "activa" &&
+                    profile && cachedRole && profile.uid === cachedRole.uid &&
+                    String(profile.rol || "").trim().toLowerCase() === cachedRole.role) {
+                    if (cachedRole.isAdmin === true) document.documentElement.classList.add("role-admin");
+                    if (cachedRole.isAdmin === true ||
+                        ["coordinador", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-coordinator");
+                    }
+                    if (cachedRole.isAdmin === true ||
+                        ["agente", "seguridad", "administrador", "admin"].includes(cachedRole.role)) {
+                        document.documentElement.classList.add("role-security");
+                    }
+                }
+            } catch (error) {
+                console.warn("No se pudo recuperar el rol guardado para el menú:", error);
+            }
+        })();
+    </script>
+    <link rel="stylesheet" href="../css/estilos.css?v=native-scrollbar-20261125-4">
+    <link rel="stylesheet" href="../css/responsive.css?v=mobile-type-review-20261125">
+    <link rel="stylesheet" href="../css/mapa.css?v=mobile-map-type-20261125-8">
+    <link rel="stylesheet" href="../css/alertas.css?v=hu07-optional-alert-detail-20261107-2">
     <script src="../js/tema.js?v=20261029-theme-scroll"></script>
 </head>
 
@@ -74,7 +96,7 @@
                 </div>
             </div>
 
-            <nav class="sidebar-menu" aria-label="Secciones de la aplicación">
+            <nav class="sidebar-menu">
                 <a href="mapa.html" class="activo">
                     <i class="fa-solid fa-map-location-dot"></i>
                     <span>Mapa</span>
@@ -105,6 +127,16 @@
                 </a>
             </nav>
 
+            <div class="sidebar-estado">
+                <div class="sidebar-estado-icono">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <div>
+                    <strong id="estadoOperacionTitulo">Conexión requerida</strong>
+                    <span id="estadoOperacionDetalle">Inicia sesión para ver alertas en tiempo real.</span>
+                </div>
+            </div>
+
             <a href="login.html" class="cerrar-sesion" id="btnCerrarSesionLateral">
                 <i class="fa-solid fa-right-from-bracket"></i>
                 Cerrar sesión
@@ -113,12 +145,6 @@
         </aside>
 
         <section class="mapa-contenido">
-            <nav class="migas-pan" aria-label="Migas de pan">
-                <ol>
-                    <li><a href="mapa.html">Inicio</a></li>
-                    <li aria-current="page">Mapa de seguridad</li>
-                </ol>
-            </nav>
             <div class="mapa-superior">
                 <div>
                     <h1>Mapa de seguridad</h1>
@@ -381,7 +407,7 @@
     <script type="module" src="../js/estado-cuenta.js?v=modular-sdk-1"></script>
     <script src="../js/ubicacion.js?v=shared-distance-utils-20261111"></script>
     <script src="../js/notificaciones.js?v=alerts-sound-independent-20261112"></script>
-    <script type="module" src="../js/coalerta-data.js?v=community-leave-20261123"></script>
+    <script type="module" src="../js/coalerta-data.js?v=account-deletion-rules-20261121"></script>
     <script type="module" src="../js/mapa.js?v=mapa-pins-blancos-20261114"></script>
     <script src="../js/alertas.js?v=incident-location-canonical-20261114"></script>
 </body>

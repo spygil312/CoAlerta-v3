@@ -73,6 +73,13 @@ document.addEventListener("DOMContentLoaded", function () {
         if (detail.area === "incidentes historial") {
             errorConsultaComunidad = detail.message || "No se pudieron cargar cierres del sector.";
             actualizarEstadoHistorial("error");
+            const operation = document.getElementById("estadoOperacionHistorial");
+            const operationDetail = document.getElementById("detalleOperacionHistorial");
+            if (operation) operation.textContent = "No se pudieron cargar cierres del sector";
+            if (operationDetail) {
+                operationDetail.textContent =
+                    "Comprueba que tu rol tenga acceso a los incidentes de la comunidad e inténtalo nuevamente.";
+            }
             return;
         }
         filas = [];
@@ -142,6 +149,13 @@ document.addEventListener("DOMContentLoaded", function () {
         filtrarHistorial(filas);
         if (errorConsultaComunidad) {
             actualizarEstadoHistorial("error");
+            const operation = document.getElementById("estadoOperacionHistorial");
+            const operationDetail = document.getElementById("detalleOperacionHistorial");
+            if (operation) operation.textContent = "No se pudieron cargar cierres del sector";
+            if (operationDetail) {
+                operationDetail.textContent =
+                    "Comprueba que tu rol tenga acceso a los incidentes de la comunidad e inténtalo nuevamente.";
+            }
         }
     }
 
@@ -224,7 +238,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function establecerEstadoRangoInvalido() {
-        window.alert("Rango de fechas no válido. La fecha de inicio debe ser anterior o igual a la fecha de fin.");
+        const operation = document.getElementById("estadoOperacionHistorial");
+        const operationDetail = document.getElementById("detalleOperacionHistorial");
+        if (operation) operation.textContent = "Rango de fechas no válido";
+        if (operationDetail) operationDetail.textContent = "La fecha de inicio debe ser anterior o igual a la fecha de fin.";
     }
 
     function mostrarEstadoHistorial(titulo, mensaje) {
@@ -237,15 +254,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function actualizarEstadoHistorial(status) {
         const header = document.getElementById("estadoSistemaHistorial");
+        const operation = document.getElementById("estadoOperacionHistorial");
+        const detail = document.getElementById("detalleOperacionHistorial");
         const stateContainer = document.querySelector(".estado-sistema");
         const statusDot = document.querySelector(".estado-punto");
         const labels = {
-            connected: "Conectado a CoAlerta",
-            connecting: "Conectando…",
-            error: "Error de sincronización",
-            disconnected: "Sin sesión"
+            connected: ["Conectado a CoAlerta", "Historial sincronizado", "Tus reportes se actualizan en tiempo real."],
+            connecting: ["Conectando…", "Conectando al servidor", "Esperando conexión y autenticación."],
+            error: ["Error de sincronización", "Sin datos sincronizados", "Revisa tu conexión e inténtalo nuevamente."],
+            disconnected: ["Sin sesión", "Conexión requerida", "Inicia sesión para consultar tus reportes."]
         };
-        if (header) header.textContent = labels[status] || labels.error;
+        const [headerText, operationText, detailText] = labels[status] || labels.error;
+        if (header) header.textContent = headerText;
+        if (operation) operation.textContent = operationText;
+        if (detail) detail.textContent = detailText;
         if (stateContainer) stateContainer.dataset.state = status;
         if (statusDot) {
             statusDot.style.backgroundColor = status === "connected"
@@ -437,7 +459,8 @@ function crearFilaAlerta(alerta) {
         if (typeof window.coalertaMarcarAlertaLeida === "function") {
             window.coalertaMarcarAlertaLeida(alerta).catch((error) => {
                 console.error("No se pudo marcar la alerta como leída desde el historial:", error);
-                window.alert(error.message || "No se pudo guardar que la alerta fue leída.");
+                const operation = document.getElementById("detalleOperacionHistorial");
+                if (operation) operation.textContent = error.message || "No se pudo guardar que la alerta fue leída.";
             });
         }
     });

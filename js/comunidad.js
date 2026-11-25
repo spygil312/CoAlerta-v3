@@ -19,6 +19,7 @@ let stopWatchingAnnouncements = null;
 let watchingAnnouncementsUid = null;
 let watchingAnnouncementsCommunityId = null;
 let solicitudPerfilVecino = 0;
+let elementoEnfoqueAntesDeSalir = null;
 const listasAmpliables = new Map();
 const configuracionListas = {
     miembros: {
@@ -57,107 +58,6 @@ const configuracionListas = {
     }
 };
 
-function construirConsultaOverpass(latitud, longitud, radio) {
-    const alrededor = `(around:${radio},${latitud},${longitud})`;
-    const filtros = [
-        '["amenity"="police"]',
-        '["amenity"="hospital"]',
-        '["amenity"="clinic"]',
-        '["amenity"="fire_station"]',
-        '["emergency"="fire_station"]',
-        '["amenity"="townhall"]'
-    ];
-    return '[out:json][timeout:25];(' +
-        filtros.map((filtro) => 'nwr' + filtro + alrededor + ';').join('') +
-        ');out center tags 200;';
-}
-
-function guardarCacheLugares(clave, elements) {
-    if (!Array.isArray(elements) || elements.length === 0) return;
-    try {
-        sessionStorage.setItem(clave, JSON.stringify({ timestamp: Date.now(), elements }));
-    } catch (error) {
-        console.warn('No se pudo guardar la caché temporal de lugares cercanos:', error);
-    }
-}
-
-function guardarLugaresParaMapa(lugares) {
-    try {
-        const tiposEnMapa = new Set(['salud', 'comisaria', 'serenazgo', 'bomberos', 'municipalidad']);
-        const compactos = lugares
-            .filter((lugar) => tiposEnMapa.has(lugar.tipo))
-            .map((lugar) => ({
-                nombre: lugar.nombre,
-                tipo: lugar.tipo,
-                latitud: lugar.latitud,
-                longitud: lugar.longitud
-            }));
-        sessionStorage.setItem('coalerta_lugares_mapa', JSON.stringify({
-            timestamp: Date.now(),
-            lugares: compactos
-        }));
-    } catch (error) {
-        console.warn('No se pudieron guardar los lugares cercanos para el mapa:', error);
-    }
-}
-
-function crearEnlaceMapa(elemento) {
-    const parametros = new URLSearchParams({
-        lat: String(elemento.latitud),
-        lng: String(elemento.longitud)
-    });
-    if (!elemento.esPersonal) {
-        parametros.set('tipo', elemento.tipo || 'lugar');
-        parametros.set('nombre', String(elemento.nombre || '').slice(0, 120));
-    }
-    return `mapa.html?${parametros.toString()}`;
-}
-
-function clasificarLugarCercano(etiquetas, nombre) {
-    if (etiquetas.tipo === 'bomberos' || etiquetas.categoria === 'bomberos' ||
-        etiquetas.amenity === 'fire_station' || etiquetas.emergency === 'fire_station' ||
-        /bombero|compa[ñn][ií]a|fire/i.test(nombre)) return 'bomberos';
-    if (/serenazgo|seguridad ciudadana/i.test(nombre)) return 'serenazgo';
-    if (etiquetas.amenity === 'police' ||
-        /comisar[ií]a|polic[ií]a|PNP/i.test(nombre)) return 'comisaria';
-    if (etiquetas.amenity === 'townhall' || etiquetas.government === 'municipality' ||
-        /municipalidad|municipio/i.test(nombre)) return 'municipalidad';
-    if (['hospital', 'clinic', 'doctors'].includes(etiquetas.amenity) ||
-        ['hospital', 'clinic', 'health_post', 'doctor'].includes(etiquetas.healthcare) ||
-        /posta|centro de salud/i.test(nombre)) return 'salud';
-    return null;
-}
-
-function obtenerMilisegundos(valor) {
-    if (valor && typeof valor.toMillis === 'function') return valor.toMillis();
-    if (valor && typeof valor.toDate === 'function') return valor.toDate().getTime();
-    const fecha = new Date(valor || 0).getTime();
-    return Number.isFinite(fecha) ? fecha : Number.NaN;
-}
-
-function obtenerIconoLugar(tipo) {
-    const iconos = {
-        serenazgo: 'fa-user-shield',
-        comisaria: 'fa-shield-halved',
-        salud: 'fa-kit-medical',
-        municipalidad: 'fa-landmark',
-        bomberos: 'fa-fire-extinguisher'
-    };
-    return iconos[tipo] || 'fa-location-dot';
-}
-
-function etiquetaTipoLugar(tipo) {
-    const etiquetas = {
-        serenazgo: 'Serenazgo',
-        comisaria: 'Comisaría / policía',
-        salud: 'Centro de salud',
-        municipalidad: 'Municipalidad',
-        bomberos: 'Estación de bomberos',
-        lugar: 'Lugar importante'
-    };
-    return etiquetas[tipo] || etiquetas.lugar;
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     configurarCierreSesionCompartido({
         auth,
@@ -170,7 +70,45 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarListaCompleta(clave);
         });
     });
-    document.getElementById('btn-salir-comunidad')?.addEventListener('click', salirComunidad);
+    document.getElementById('btn-salir-comunidad')?.addEventListener(
+        'click',
+        abrirConfirmacionSalida
+    );
+    document.getElementById('btn-cancelar-salida')?.addEventListener(
+        'click',
+        cerrarConfirmacionSalida
+    );
+    document.getElementById('btn-confirmar-salida')?.addEventListener(
+        'click',
+        confirmarSalidaComunidad
+    );
+    document.getElementById('modal-salir-comunidad')?.addEventListener('click', (evento) => {
+        if (evento.target === evento.currentTarget) cerrarConfirmacionSalida();
+    });
+    document.addEventListener('keydown', (evento) => {
+        const modal = document.getElementById('modal-salir-comunidad');
+        if (evento.key === 'Escape' && modal?.classList.contains('activo')) {
+            cerrarConfirmacionSalida();
+        }
+        if (evento.key === 'Tab' && modal?.classList.contains('activo')) {
+            const focusable = [...modal.querySelectorAll(
+                'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+            )];
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (!modal.contains(document.activeElement)) {
+                evento.preventDefault();
+                (evento.shiftKey ? last : first).focus();
+            } else if (evento.shiftKey && document.activeElement === first) {
+                evento.preventDefault();
+                last.focus();
+            } else if (!evento.shiftKey && document.activeElement === last) {
+                evento.preventDefault();
+                first.focus();
+            }
+        }
+    });
     document.getElementById('modal-lista-comunidad')?.addEventListener('click', (evento) => {
         if (evento.target === evento.currentTarget) cerrarModal('modal-lista-comunidad');
     });
@@ -190,13 +128,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.setInterval(renderizarPersonalSeguridadCercano, 30000);
     window.addEventListener('coalerta:comunidad-asignada', (event) => {
-        const comunidadId = event.detail?.comunidadId;
+        const comunidadId = event.detail && event.detail.comunidadId;
         if (!usuarioActual || !comunidadId || usuarioActual.comunidadId === comunidadId) return;
         usuarioActual.comunidadId = comunidadId;
         inicializarInterfazReal();
     });
     window.addEventListener('coalerta:error', (event) => {
-        if (event.detail?.area === 'comunicados') {
+        if (event.detail && event.detail.area === 'comunicados') {
             actualizarListaAmpliable(
                 'comunicados',
                 [],
@@ -228,7 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         buscarLugaresCercanos();
-        const profile = window.coalertaData?.getProfile();
+        const profile = window.coalertaData && window.coalertaData.getProfile();
         if (profile && profile.uid === user.uid) initializeCommunityProfile(user, profile);
     });
     window.addEventListener('coalerta:datos-listos', (event) => {
@@ -294,7 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.clearTimeout(avisosExpiryTimer);
             avisosExpiryTimer = null;
         }
-        if (!window.coalertaData?.isReady()) {
+        if (!window.coalertaData || !window.coalertaData.isReady()) {
             mostrarMensajeEnContenedor(contenedor, 'Conectando los avisos de tu comunidad…');
             return;
         }
@@ -303,7 +241,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const ahora = Date.now();
             const vigenciaMs = 24 * 60 * 60 * 1000;
             const avisos = window.coalertaData.getNotices()
-                .filter((aviso) => aviso.comunidadId === usuarioActual?.comunidadId)
+                .filter((aviso) => aviso.comunidadId === (usuarioActual && usuarioActual.comunidadId))
                 .filter((aviso) => {
                     const fecha = new Date(aviso.timestamp).getTime();
                     return Number.isFinite(fecha) && ahora - fecha < vigenciaMs;
@@ -407,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function pausa(ms, senal) {
         return new Promise((resolve, reject) => {
-            if (senal?.aborted) {
+            if (senal && senal.aborted) {
                 reject(new DOMException('Cancelado', 'AbortError'));
                 return;
             }
@@ -420,9 +358,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
     async function pedirJson(url, opciones = {}, tiempoMaximoMs = 15000, senalExterna = null) {
         const controlador = new AbortController();
-        const cancelar = () => controlador.abort(senalExterna?.reason);
+        const cancelar = () => controlador.abort(senalExterna && senalExterna.reason);
         if (senalExterna) {
             if (senalExterna.aborted) cancelar();
             else senalExterna.addEventListener('abort', cancelar, { once: true });
@@ -440,6 +379,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function construirConsultaOverpass(latitud, longitud, radio) {
+        const alrededor = `(around:${radio},${latitud},${longitud})`;
+        const filtros = [
+            '["amenity"="police"]',
+            '["amenity"="hospital"]',
+            '["amenity"="clinic"]',
+            '["amenity"="fire_station"]',
+            '["emergency"="fire_station"]',
+            '["amenity"="townhall"]'
+        ];
+        return `[out:json][timeout:25];(${filtros.map((f) => `nwr${f}${alrededor};`).join('')});out center tags 200;`;
+    }
+
     function leerCacheLugares(clave, aceptarVencida) {
         try {
             const cache = JSON.parse(sessionStorage.getItem(clave) || 'null');
@@ -452,6 +404,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return null;
     }
+
+    function guardarCacheLugares(clave, elements) {
+        if (!Array.isArray(elements) || elements.length === 0) return;
+        try {
+            sessionStorage.setItem(clave, JSON.stringify({ timestamp: Date.now(), elements }));
+        } catch (error) {
+            console.warn('No se pudo guardar la caché temporal de lugares cercanos:', error);
+        }
+    }
+
     async function consultarOverpass(latitud, longitud) {
         const consulta = construirConsultaOverpass(latitud, longitud, RADIO_BUSQUEDA_METROS);
         const grupo = new AbortController();
@@ -469,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     grupo.signal
                 );
                 if (!Array.isArray(datos.elements)) {
-                    throw new TypeError(`${servidor} no devolvió una lista de lugares.`);
+                    throw new Error(`${servidor} no devolvió una lista de lugares.`);
                 }
                 if (typeof datos.remark === 'string' && /runtime error|timed out|out of memory/i.test(datos.remark)) {
                     throw new Error(`${servidor}: ${datos.remark}`);
@@ -479,12 +441,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             if (error instanceof AggregateError) {
                 error.errors.forEach((motivo, indice) =>
-                    console.warn(`Overpass (${SERVIDORES_OVERPASS[indice]}) falló:`, motivo?.message || motivo)
+                    console.warn(`Overpass (${SERVIDORES_OVERPASS[indice]}) falló:`, motivo && motivo.message || motivo)
                 );
             }
             throw error;
         } finally {
-            grupo.abort(new DOMException('Consulta finalizada', 'AbortError')); 
+            grupo.abort(new DOMException('Consulta finalizada', 'AbortError'));
         }
     }
 
@@ -530,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 });
             } catch (error) {
-                console.warn(`Nominatim no respondió para "${categoria}":`, error?.message || error);
+                console.warn(`Nominatim no respondió para "${categoria}":`, error && error.message || error);
             }
         }
         if (exitosas === 0) throw new Error('Nominatim no respondió a ninguna consulta.');
@@ -547,8 +509,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const elementos = await consultarOverpass(latitud, longitud);
             guardarCacheLugares(claveCache, elementos);
             return elementos;
-        } catch (error_) {
-            console.warn('Overpass no respondió en ningún servidor; se usará un respaldo:', error_);
+        } catch (errorOverpass) {
+            console.warn('Overpass no respondió en ningún servidor; se usará un respaldo:', errorOverpass);
         }
 
         const cacheAntigua = leerCacheLugares(claveCache, true);
@@ -562,8 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const elementos = await consultarNominatimPorCategoria(latitud, longitud);
             guardarCacheLugares(claveCache, elementos);
             return elementos;
-        } catch (error_) {
-            console.warn('El respaldo de Nominatim tampoco respondió:', error_);
+        } catch (errorNominatim) {
+            console.warn('El respaldo de Nominatim tampoco respondió:', errorNominatim);
             throw new Error('No respondieron los servidores de OpenStreetMap (Overpass ni Nominatim).');
         }
     }
@@ -657,9 +619,41 @@ document.addEventListener('DOMContentLoaded', () => {
         );
     }
 
+    function guardarLugaresParaMapa(lugares) {
+        try {
+            const tiposEnMapa = ['salud', 'comisaria', 'serenazgo', 'bomberos', 'municipalidad'];
+            const compactos = lugares
+                .filter((lugar) => tiposEnMapa.includes(lugar.tipo))
+                .map((lugar) => ({
+                    nombre: lugar.nombre,
+                    tipo: lugar.tipo,
+                    latitud: lugar.latitud,
+                    longitud: lugar.longitud
+                }));
+            sessionStorage.setItem('coalerta_lugares_mapa', JSON.stringify({
+                timestamp: Date.now(),
+                lugares: compactos
+            }));
+        } catch (error) {
+            console.warn('No se pudieron guardar los lugares cercanos para el mapa:', error);
+        }
+    }
+
+    function crearEnlaceMapa(elemento) {
+        const parametros = new URLSearchParams({
+            lat: String(elemento.latitud),
+            lng: String(elemento.longitud)
+        });
+        if (!elemento.esPersonal) {
+            parametros.set('tipo', elemento.tipo || 'lugar');
+            parametros.set('nombre', String(elemento.nombre || '').slice(0, 120));
+        }
+        return `mapa.html?${parametros.toString()}`;
+    }
+
     function renderizarPersonalSeguridadCercano() {
         const data = window.coalertaData;
-        const miembros = data?.isReady()
+        const miembros = data && data.isReady()
             ? data.getCommunityMembers()
                 .filter((miembro) => miembro.rol === 'seguridad' &&
                     (miembro.estado === 'Activo' || miembro.activo === true))
@@ -704,6 +698,21 @@ document.addEventListener('DOMContentLoaded', () => {
         establecerTextoCercano('contadorServiciosSeguridad', serviciosOpenStreetMap + miembros.length);
     }
 
+    function clasificarLugarCercano(etiquetas, nombre) {
+        if (etiquetas.tipo === 'bomberos' || etiquetas.categoria === 'bomberos' ||
+            etiquetas.amenity === 'fire_station' || etiquetas.emergency === 'fire_station' ||
+            /bombero|compa(?:ñ|n)[ií]a|fire/i.test(nombre)) return 'bomberos';
+        if (/serenazgo|seguridad ciudadana/i.test(nombre)) return 'serenazgo';
+        if (etiquetas.amenity === 'police' ||
+            /comisar[ií]a|polic[ií]a|PNP/i.test(nombre)) return 'comisaria';
+        if (etiquetas.amenity === 'townhall' || etiquetas.government === 'municipality' ||
+            /municipalidad|municipio/i.test(nombre)) return 'municipalidad';
+        if (['hospital', 'clinic', 'doctors'].includes(etiquetas.amenity) ||
+            ['hospital', 'clinic', 'health_post', 'doctor'].includes(etiquetas.healthcare) ||
+            /posta|centro de salud/i.test(nombre)) return 'salud';
+        return null;
+    }
+
     function renderizarListaCercana(id, elementos, tipoLista) {
         const contenedor = document.getElementById(id);
         if (!contenedor) return;
@@ -733,17 +742,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const titulo = document.createElement('h4');
             titulo.textContent = elemento.nombre;
             const descripcion = document.createElement('p');
-            let detalleDistancia = '';
-            if (Number.isFinite(elemento.distancia)) {
-                detalleDistancia = formatearDistancia(elemento.distancia);
-            } else if (elemento.esPersonal) {
-                detalleDistancia = 'Ubicación no compartida';
-            }
-            const etiqueta = elemento.esPersonal
-                ? 'Personal activo'
-                : etiquetaTipoLugar(elemento.tipo);
+            const detalleDistancia = Number.isFinite(elemento.distancia)
+                ? formatearDistancia(elemento.distancia)
+                : elemento.esPersonal
+                    ? 'Ubicación no compartida'
+                    : '';
             descripcion.textContent = detalleDistancia
-                ? `${etiqueta} · ${detalleDistancia}`
+                ? `${elemento.esPersonal ? 'Personal activo' : etiquetaTipoLugar(elemento.tipo)} · ${detalleDistancia}`
                 : etiquetaTipoLugar(elemento.tipo);
             info.append(titulo, descripcion);
 
@@ -755,6 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const enlace = document.createElement('a');
             enlace.className = tipoLista === 'servicio' ? 'enlace-lugar-cercano' : 'icono-flecha';
+            // Se abre en el panel de mapa de CoAlerta (misma pestaña), no en OpenStreetMap.
             enlace.href = crearEnlaceMapa(elemento);
             enlace.setAttribute('aria-label', elemento.esPersonal
                 ? `Ver la ubicación compartida de ${elemento.nombre} en el mapa`
@@ -771,11 +777,41 @@ document.addEventListener('DOMContentLoaded', () => {
             return fila;
     }
 
+    function obtenerMilisegundos(valor) {
+        if (valor && typeof valor.toMillis === 'function') return valor.toMillis();
+        if (valor && typeof valor.toDate === 'function') return valor.toDate().getTime();
+        const fecha = new Date(valor || 0).getTime();
+        return Number.isFinite(fecha) ? fecha : NaN;
+    }
+
+    function obtenerIconoLugar(tipo) {
+        const iconos = {
+            serenazgo: 'fa-user-shield',
+            comisaria: 'fa-shield-halved',
+            salud: 'fa-kit-medical',
+            municipalidad: 'fa-landmark',
+            bomberos: 'fa-fire-extinguisher'
+        };
+        return iconos[tipo] || 'fa-location-dot';
+    }
+
+    function etiquetaTipoLugar(tipo) {
+        const etiquetas = {
+            serenazgo: 'Serenazgo',
+            comisaria: 'Comisaría / policía',
+            salud: 'Centro de salud',
+            municipalidad: 'Municipalidad',
+            bomberos: 'Estación de bomberos',
+            lugar: 'Lugar importante'
+        };
+        return etiquetas[tipo] || etiquetas.lugar;
+    }
+
     function distanciaEnMetros(lat1, lon1, lat2, lon2) {
         const [primeraLatitud, primeraLongitud, segundaLatitud, segundaLongitud] =
             [lat1, lon1, lat2, lon2].map(Number);
         if (![primeraLatitud, primeraLongitud, segundaLatitud, segundaLongitud]
-            .every(Number.isFinite)) return Number.NaN;
+            .every(Number.isFinite)) return NaN;
 
         return window.coalertaData.distanceMeters(
             { latitud: primeraLatitud, longitud: primeraLongitud },
@@ -862,7 +898,7 @@ function cargarVecinosEnTiempoReal() {
 
 function cargarAnunciosEnTiempoReal() {
     const contenedor = document.getElementById('contenedor-anuncios');
-    if (!contenedor || !usuarioActual?.uid || !usuarioActual?.comunidadId) return;
+    if (!contenedor || !usuarioActual || !usuarioActual.uid || !usuarioActual.comunidadId) return;
 
     const uid = usuarioActual.uid;
     const communityId = usuarioActual.comunidadId;
@@ -952,9 +988,7 @@ function crearFilaMiembro(vecino) {
     fila.setAttribute('aria-label', `Ver perfil de ${nombre}`);
     fila.addEventListener('click', () => {
         cerrarModal('modal-lista-comunidad');
-        verPerfilVecino(vecino).catch((error) => {
-            console.error('No se pudo abrir el perfil del vecino:', error);
-        });
+        verPerfilVecino(vecino);
     });
 
     const avatar = document.createElement('span');
@@ -1035,7 +1069,7 @@ function crearFilaComunicado(aviso) {
 }
 
 async function guardarAnuncio() {
-    if (!usuarioActual?.comunidadId) {
+    if (!usuarioActual || !usuarioActual.comunidadId) {
         alert('Primero debes pertenecer a una comunidad.');
         return;
     }
@@ -1136,25 +1170,58 @@ async function procesarUnion() {
     }
 }
 
-async function salirComunidad() {
-    if (!usuarioActual || !['vecino', 'seguridad'].includes(usuarioActual.rol) ||
-        !usuarioActual.comunidadId) return;
-    if (!window.confirm(
-        '¿Seguro que deseas salir de esta comunidad? Se quitará tu perfil de miembro y los contactos de emergencia guardados en ella. Tu cuenta seguirá activa y podrás unirte a otra comunidad con un código.'
-    )) return;
+function abrirConfirmacionSalida() {
+    const role = usuarioActual?.rol;
+    if (!usuarioActual?.comunidadId || !['vecino', 'seguridad'].includes(role)) return;
 
-    const boton = document.getElementById('btn-salir-comunidad');
-    if (boton) boton.disabled = true;
+    const modal = document.getElementById('modal-salir-comunidad');
+    const cancelButton = document.getElementById('btn-cancelar-salida');
+    const status = document.getElementById('estado-salida-comunidad');
+    if (!modal || !cancelButton || !status) return;
+
+    elementoEnfoqueAntesDeSalir = document.activeElement;
+    status.textContent = '';
+    modal.classList.add('activo');
+    cancelButton.focus();
+}
+
+function cerrarConfirmacionSalida() {
+    const modal = document.getElementById('modal-salir-comunidad');
+    const confirmButton = document.getElementById('btn-confirmar-salida');
+    if (!modal || confirmButton?.disabled) return;
+    modal.classList.remove('activo');
+    if (elementoEnfoqueAntesDeSalir instanceof HTMLElement) {
+        elementoEnfoqueAntesDeSalir.focus();
+    }
+    elementoEnfoqueAntesDeSalir = null;
+}
+
+async function confirmarSalidaComunidad() {
+    if (!usuarioActual?.comunidadId || !['vecino', 'seguridad'].includes(usuarioActual.rol)) {
+        cerrarConfirmacionSalida();
+        return;
+    }
+
+    const cancelButton = document.getElementById('btn-cancelar-salida');
+    const confirmButton = document.getElementById('btn-confirmar-salida');
+    const status = document.getElementById('estado-salida-comunidad');
+    if (!confirmButton || !status) return;
+
+    confirmButton.disabled = true;
+    if (cancelButton) cancelButton.disabled = true;
+    status.textContent = 'Procesando tu salida de la comunidad…';
+    status.focus();
     try {
         await window.coalertaData.leaveCommunity();
-        alert('Saliste de la comunidad. Tu cuenta sigue activa; puedes unirte a otra cuando tengas un código de invitación.');
+        status.textContent = 'Salida confirmada. Actualizando tu cuenta…';
         location.reload();
     } catch (error) {
         console.error('No se pudo salir de la comunidad:', error);
-        alert(error.code === 'permission-denied'
-            ? 'Firestore rechazó la operación. Verifica que las reglas actualizadas de firestore.rules estén publicadas.'
-            : error.message || 'No se pudo salir de la comunidad. Inténtalo nuevamente.');
-        if (boton) boton.disabled = false;
+        status.textContent = error.code === 'permission-denied'
+            ? 'Firestore rechazó la operación. Verifica que las reglas actualizadas estén publicadas.'
+            : error.message || 'No se pudo salir de la comunidad. Inténtalo nuevamente.';
+        confirmButton.disabled = false;
+        if (cancelButton) cancelButton.disabled = false;
     }
 }
 
@@ -1172,7 +1239,7 @@ function cerrarModal(id) {
 }
 
 function configurarSegunRol() {
-    const esCoordinador = usuarioActual?.rol === 'coordinador';
+    const esCoordinador = usuarioActual && usuarioActual.rol === 'coordinador';
     const invitar = document.getElementById('btn-generar-codigo');
     const publicar = document.getElementById('btn-nuevo-anuncio');
     const unirse = document.getElementById('btn-unirse-comunidad');
@@ -1286,12 +1353,11 @@ async function verPerfilVecino(miembro) {
         ? 'Personal de serenazgo'
         : miembro.rol || 'Vecino';
     if (inicialesPerfil) inicialesPerfil.textContent = obtenerIniciales(nombre);
-    let fecha = null;
-    if (miembro.fechaIngreso && typeof miembro.fechaIngreso.toDate === 'function') {
-        fecha = miembro.fechaIngreso.toDate();
-    } else if (miembro.fechaIngreso) {
-        fecha = new Date(miembro.fechaIngreso);
-    }
+    const fecha = miembro.fechaIngreso && typeof miembro.fechaIngreso.toDate === 'function'
+        ? miembro.fechaIngreso.toDate()
+        : miembro.fechaIngreso
+            ? new Date(miembro.fechaIngreso)
+            : null;
     if (fechaIngreso) {
         fechaIngreso.textContent = !fecha || Number.isNaN(fecha.getTime())
             ? 'Fecha de ingreso no disponible.'

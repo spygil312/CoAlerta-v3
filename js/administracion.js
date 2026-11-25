@@ -1,7 +1,7 @@
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import {
     collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query,
-    runTransaction, serverTimestamp, Timestamp, updateDoc, where
+    runTransaction, serverTimestamp, Timestamp, where
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { auth, db } from "./firebase-config.js?v=spark-direct-firestore-1";
 
@@ -73,11 +73,8 @@ if (aviso && panel && lista && cantidad && botonActualizar) {
                     const communitySnapshot = communityRef
                         ? await transaction.get(communityRef)
                         : null;
-                    if (!currentProfile.exists() ||
-                        currentProfile.get("rol") !== "coordinador") {
-                        throw new Error(
-                            "El perfil coordinador cambió. Actualiza la página e inténtalo nuevamente."
-                        );
+                    if (!currentProfile.exists() || currentProfile.get("rol") !== "coordinador") {
+                        throw new Error("El perfil coordinador cambió. Actualiza la página e inténtalo nuevamente.");
                     }
                     transaction.update(profileRef, { rol: "administrador" });
                     if (communityRef && communitySnapshot && communitySnapshot.exists()) {
@@ -424,11 +421,7 @@ function createUnitAssignmentCard(profile) {
     );
     const assignment = document.createElement("span");
     assignment.className = "administracion-rol";
-    assignment.textContent = currentUnit
-        ? `Unidad asignada: ${currentUnit.id}`
-        : profile.patrullaId
-            ? `Asignación pendiente de revisión: ${profile.patrullaId}`
-            : "Sin unidad asignada";
+    assignment.textContent = currentUnit ? `Unidad asignada: ${currentUnit.id}` : "Sin unidad asignada";
     details.append(name, email, assignment);
 
     const actions = document.createElement("div");
@@ -454,16 +447,6 @@ function createUnitAssignmentCard(profile) {
     assign.disabled = select.options.length < 2;
     assign.addEventListener("click", () => assignUnit(profile.uid, select.value, assign));
     actions.append(select, assign);
-    if (currentUnit) {
-        const release = document.createElement("button");
-        release.type = "button";
-        release.className = "administracion-rechazar";
-        release.textContent = "Retirar unidad";
-        release.addEventListener("click", () =>
-            releaseUnit(profile.uid, currentUnit.id, release)
-        );
-        actions.append(release);
-    }
     card.append(details, actions);
     return card;
 }
@@ -499,12 +482,12 @@ async function assignUnit(uid, unitId, button) {
                 ? doc(db, "unidades", previousId)
                 : null;
             const previousSnapshot = previousRef ? await transaction.get(previousRef) : null;
-            if (previousSnapshot?.exists() &&
+            if (previousSnapshot && previousSnapshot.exists() &&
                 previousSnapshot.get("asignadaA") !== uid) {
                 throw new Error("La unidad anterior está asignada a otro perfil; revisa el inventario.");
             }
 
-            if (previousSnapshot?.exists()) {
+            if (previousSnapshot && previousSnapshot.exists()) {
                 transaction.update(previousRef, { estado: "disponible", asignadaA: null });
             }
             transaction.update(unitRef, { estado: "ocupada", asignadaA: uid });
@@ -517,65 +500,6 @@ async function assignUnit(uid, unitId, button) {
         if (estadoUnidades) estadoUnidades.textContent = `${unitId} asignada correctamente.`;
     } catch (error) {
         console.error("No se pudo asignar la unidad:", error);
-        if (estadoUnidades) estadoUnidades.textContent = getErrorMessage(error);
-        cardButtons.forEach((item) => { item.disabled = false; });
-    }
-}
-
-async function releaseUnit(uid, unitId, button) {
-    if (!adminClaimVerified || !auth.currentUser ||
-        String(auth.currentUser.email || "").toLowerCase() !== ADMIN_EMAIL) return;
-    if (!/^Unidad-(?:0[1-9]|10)$/.test(unitId)) {
-        if (estadoUnidades) estadoUnidades.textContent = "Selecciona una unidad válida.";
-        return;
-    }
-    if (!window.confirm(`¿Retirar la unidad ${unitId} del perfil asignado?`)) return;
-    const card = button.closest(".administracion-solicitud");
-    const cardButtons = card.querySelectorAll("button, select");
-    cardButtons.forEach((item) => { item.disabled = true; });
-    if (estadoUnidades) estadoUnidades.textContent = `Retirando ${unitId}…`;
-    try {
-        await runTransaction(db, async (transaction) => {
-            const userRef = doc(db, "usuarios", uid);
-            const unitRef = doc(db, "unidades", unitId);
-            const patrolRef = doc(db, "patrullas", unitId);
-            const [userSnapshot, unitSnapshot, patrolSnapshot] = await Promise.all([
-                transaction.get(userRef),
-                transaction.get(unitRef),
-                transaction.get(patrolRef)
-            ]);
-            if (!userSnapshot.exists() || userSnapshot.get("rol") !== "seguridad" ||
-                userSnapshot.get("activo") !== true ||
-                userSnapshot.get("estadoSolicitudRol") !== "aprobada" ||
-                userSnapshot.get("patrullaId") !== unitId) {
-                throw new Error("El perfil ya no tiene asignada esta unidad. Actualiza la lista.");
-            }
-            if (!unitSnapshot.exists() || unitSnapshot.get("estado") !== "ocupada" ||
-                unitSnapshot.get("asignadaA") !== uid) {
-                throw new Error("La unidad no coincide con el perfil asignado. Revisa el inventario.");
-            }
-            if (patrolSnapshot.exists() &&
-                (patrolSnapshot.get("estado") !== "Disponible" ||
-                    Boolean(patrolSnapshot.get("incidenteId")) ||
-                    (patrolSnapshot.get("agenteUid") &&
-                        patrolSnapshot.get("agenteUid") !== uid))) {
-                throw new Error(
-                    "No se puede retirar la unidad mientras atiende una alerta o está vinculada a otro agente."
-                );
-            }
-
-            transaction.update(userRef, {
-                patrullaId: null,
-                codigoPatrulla: null,
-                fechaAsignacion: null
-            });
-            transaction.update(unitRef, { estado: "disponible", asignadaA: null });
-        });
-        if (estadoUnidades) {
-            estadoUnidades.textContent = `${unitId} retirada correctamente. El personal puede continuar con la eliminación de su cuenta.`;
-        }
-    } catch (error) {
-        console.error("No se pudo retirar la unidad:", error);
         if (estadoUnidades) estadoUnidades.textContent = getErrorMessage(error);
         cardButtons.forEach((item) => { item.disabled = false; });
     }
